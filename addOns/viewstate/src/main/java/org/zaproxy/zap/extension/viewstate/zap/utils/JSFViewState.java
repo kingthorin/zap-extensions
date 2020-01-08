@@ -25,7 +25,6 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import org.apache.log4j.Logger;
 import org.parosproxy.paros.extension.encoder.Base64;
 
 /**
@@ -45,7 +44,6 @@ import org.parosproxy.paros.extension.encoder.Base64;
  */
 public class JSFViewState extends ViewState {
 
-    private static Logger logger = Logger.getLogger(JSFViewState.class);
     public static final String KEY = "JSF";
 
     public JSFViewState(String base64, String name) {
