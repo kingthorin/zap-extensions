@@ -50,9 +50,13 @@ public class ExtensionCustomReport extends ExtensionAdaptor {
     private AlertsPanel alertstab = null;
     private AlertDetailsPanel alertDetailstab = null;
 
-    /** */
     public ExtensionCustomReport() {
-        super("ExtensionCustomReport");
+        super(NAME);
+    }
+
+    @Override
+    public String getUIName() {
+        return Constant.messages.getString("customreport.ui.name");
     }
 
     @Override

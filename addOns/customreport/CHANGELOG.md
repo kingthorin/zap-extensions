@@ -5,11 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 
+- Maintenance changes.
 
 ## [5] - 2019-08-30
 
 - Improve layout/sizing of Generate Report dialogue (Issue 5521).
 - Remove unused library.
+- Maintenance changes.
 
 ## 4 - 2018-06-27
 
