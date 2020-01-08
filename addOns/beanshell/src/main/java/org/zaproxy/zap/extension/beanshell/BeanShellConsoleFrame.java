@@ -40,7 +40,6 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import org.apache.log4j.Logger;
 import org.parosproxy.paros.Constant;
-import org.parosproxy.paros.extension.Extension;
 import org.parosproxy.paros.extension.ViewDelegate;
 import org.parosproxy.paros.model.Model;
 import org.parosproxy.paros.network.HttpSender;
@@ -58,7 +57,6 @@ public class BeanShellConsoleFrame extends AbstractFrame {
     private JButton btnLoad = null;
     private JButton btnSave = null;
     private JButton btnSaveAs = null;
-    private Extension extension = null;
     private Interpreter interpreter = null;
     private String scriptsDir = System.getProperty("user.dir") + "/scripts/";
     private File currentScriptFile = null;
@@ -80,11 +78,10 @@ public class BeanShellConsoleFrame extends AbstractFrame {
      * @param extension
      * @throws HeadlessException
      */
-    public BeanShellConsoleFrame(Frame parent, boolean modal, Extension extension)
+    public BeanShellConsoleFrame(Frame parent, boolean modal)
             throws HeadlessException {
         // super(parent, modal);
         super();
-        this.extension = extension;
         initialize();
     }
 
@@ -305,14 +302,6 @@ public class BeanShellConsoleFrame extends AbstractFrame {
                     });
         }
         return btnSaveAs;
-    }
-
-    public void setExtension(Extension extension) {
-        this.extension = extension;
-    }
-
-    private Extension getExtension() {
-        return extension;
     }
 
     @Override
