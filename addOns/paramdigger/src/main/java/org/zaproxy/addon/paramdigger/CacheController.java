@@ -43,6 +43,7 @@ public class CacheController {
     private ParamDiggerConfig config;
     private Cache cache;
     private boolean cachingCheck;
+    private HttpMessage bustedMessage;
     private static final String METHOD_NOT_SUPPORTED = "paramdigger.method.not.supported";
     private static final int RANDOM_SEED = 100000;
 
@@ -210,11 +211,13 @@ public class CacheController {
                         cache.setCacheBusterFound(true);
                         cache.setCacheBusterIsHttpMethod(true);
                         cache.setCacheBusterName(httpMethods[i]);
+                        this.bustedMessage = msg;
                     }
                 }
             } else {
                 /* Since no indicator was found we try time difference. */
                 List<Integer> times = new ArrayList<>();
+                HttpMessage msg = new HttpMessage();
                 for (int j = 0; j < 4; j++) {
                     if (j % 2 == 0) {
                         headers.setMethod(httpMethods[i]);
@@ -231,7 +234,6 @@ public class CacheController {
                                         Constant.messages.getString(METHOD_NOT_SUPPORTED, method));
                         }
                     }
-                    HttpMessage msg = new HttpMessage();
                     msg.setRequestHeader(headers);
 
                     httpSender.sendAndReceive(msg);
@@ -261,6 +263,7 @@ public class CacheController {
                 cache.setCacheBusterFound(true);
                 cache.setCacheBusterIsHttpMethod(true);
                 cache.setCacheBusterName(httpMethods[i]);
+                this.bustedMessage = msg;
             }
         }
     }
@@ -316,11 +319,13 @@ public class CacheController {
                         cache.setCacheBusterFound(true);
                         cache.setCacheBusterIsCookie(true);
                         cache.setCacheBusterName(cookies.get(i));
+                        this.bustedMessage = msg;
                     }
                 }
             } else {
                 /* time has to be considered. */
                 List<Integer> times = new ArrayList<>();
+                HttpMessage msg = new HttpMessage();
                 for (int j = 0; j < 4; j++) {
                     if (j % 2 == 0) {
                         String cb =
@@ -333,7 +338,6 @@ public class CacheController {
                         cookieList.add(cookie);
                         headers.setCookies(cookieList);
                     }
-                    HttpMessage msg = new HttpMessage();
                     msg.setRequestHeader(headers);
                     httpSender.sendAndReceive(msg);
 
@@ -365,6 +369,7 @@ public class CacheController {
                 cache.setCacheBusterFound(true);
                 cache.setCacheBusterIsCookie(true);
                 cache.setCacheBusterName(cookies.get(i));
+                this.bustedMessage = msg;
             }
         }
     }
@@ -420,6 +425,7 @@ public class CacheController {
                         cache.setCacheBusterFound(true);
                         cache.setCacheBusterIsHeader(true);
                         cache.setCacheBusterName(headerList[i]);
+                        this.bustedMessage = msg;
                     }
                 }
             } else {
@@ -462,6 +468,7 @@ public class CacheController {
                 cache.setCacheBusterFound(true);
                 cache.setCacheBusterIsHeader(true);
                 cache.setCacheBusterName(headerList[i]);
+                this.bustedMessage = msg;
             }
         }
     }
@@ -539,6 +546,7 @@ public class CacheController {
                     cache.setCacheBusterFound(true);
                     cache.setCacheBusterIsParameter(true);
                     cache.setCacheBusterName(config.getCacheBusterName());
+                    this.bustedMessage = msg;
                 }
             }
         } else {
@@ -568,6 +576,7 @@ public class CacheController {
             cache.setCacheBusterFound(true);
             cache.setCacheBusterIsParameter(true);
             cache.setCacheBusterName(config.getCacheBusterName());
+            this.bustedMessage = msg;
         }
     }
 
@@ -646,5 +655,9 @@ public class CacheController {
             return true;
         }
         return false;
+    }
+
+    public HttpMessage getBustedResponse() {
+        return this.bustedMessage;
     }
 }
