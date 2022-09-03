@@ -20,21 +20,23 @@
 package org.zaproxy.addon.paramdigger;
 
 import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 
-import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.parosproxy.paros.model.Model;
 import org.parosproxy.paros.network.HttpSender;
-import org.zaproxy.addon.paramdigger.gui.ParamDiggerHistoryTableModel;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 import org.zaproxy.zap.testutils.TestUtils;
 
 public class CacheControllerUnitTest extends TestUtils {
     private CacheController cacheController;
-    private ParamDiggerHistoryTableModel tableModel;
     private HttpSender httpSender =
             new HttpSender(Model.getSingleton().getOptionsParam().getConnectionParam(), true, 17);
     private ParamDiggerConfig config;
@@ -47,24 +49,50 @@ public class CacheControllerUnitTest extends TestUtils {
     }
 
     @Test
-    void shouldFindCache() throws Exception {
+    void shouldFindCacheWithParameterCacheBuster() throws Exception {
         String path = "/test";
-        int count = 0;
+        Map<String, String> params = new HashMap<>();
         this.nano.addHandler(
                 new NanoServerHandler(path) {
+                    int count = 0;
+
                     @Override
                     protected Response serve(IHTTPSession session) {
+                        Map<String, List<String>> ps = session.getParameters();
+                        String header = "x-cache";
+                        String value = "";
+                        for (Map.Entry<String, List<String>> entry : ps.entrySet()) {
+                            if (!params.containsKey(entry.getKey())) {
+                                params.put(entry.getKey(), entry.getValue().get(0));
+                                value = "miss";
+                            } else if (params.get(entry.getKey()).equals(entry.getValue().get(0))) {
+                                value = "hit";
+                            } else {
+                                value = "miss";
+                            }
+                        }
+                        if (value.isEmpty() && count == 0) {
+                            value = "miss";
+                            count++;
+                        } else if (value.isEmpty() && count > 0) {
+                            value = "hit";
+                        }
                         Response response =
                                 newFixedLengthResponse(
-                                        Response.Status.OK, NanoHTTPD.MIME_PLAINTEXT, "test");
-                        if (count % 2 == 0) {
-                            response.addHeader("X-cache", "Miss");
-                        } else {
-                            response.addHeader("X-cache", "Hit");
-                        }
-
+                                        getHtml(
+                                                "AttributeName.html",
+                                                new String[][] {{"q", ""}, {"p", ""}}));
+                        response.addHeader(header, value);
                         return response;
                     }
                 });
+        String url = this.getHttpMessage(path).getRequestHeader().getURI().toString();
+        config.setUrl(url);
+        cacheController = new CacheController(this.httpSender, config);
+
+        assertThat(cacheController.isCached(Method.GET), equalTo(true));
+        assertThat(cacheController.getCache().getIndicator(), equalTo("x-cache"));
+        assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterIsParameter(), equalTo(true));
     }
 }

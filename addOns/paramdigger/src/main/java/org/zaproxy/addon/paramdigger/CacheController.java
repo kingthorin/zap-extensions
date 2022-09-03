@@ -170,7 +170,7 @@ public class CacheController {
         }
         if ((cache.getIndicator() != null || !cache.getIndicator().isEmpty())
                 || cache.hasTimeIndicator()) {
-            return true;
+            return cache.isCacheBusterFound();
         }
         return false;
     }
@@ -583,7 +583,7 @@ public class CacheController {
                         indicValue = msg.getResponseHeader().getHeader(cache.getIndicator());
                         if (this.checkCacheHit(indicValue, cache)) {
                             cache.setCacheBusterFound(true);
-                            cache.setCacheBusterIsHeader(false);
+                            cache.setCacheBusterIsParameter(true);
                             cache.setCacheBusterName(config.getCacheBusterName());
                             this.bustedMessage = msg;
                         } else {
@@ -657,14 +657,14 @@ public class CacheController {
                 // faced.
             }
             String indicValue = msg.getResponseHeader().getHeader(cache.getIndicator());
-            if (indicValue != null && !this.checkCacheHit(indicValue, cache)) {
+            if (indicValue == null || !this.checkCacheHit(indicValue, cache)) {
                 return true;
             }
+            return false;
 
         } catch (Exception e) {
             return false;
         }
-        return false;
     }
 
     /**
@@ -696,9 +696,7 @@ public class CacheController {
                 }
             }
         }
-        if (indicValue.contains("HIT")
-                || indicValue.contains("hit")
-                || indicValue.contains("Hit")) {
+        if (indicValue.equalsIgnoreCase("hit")) {
             return true;
         }
         return false;
