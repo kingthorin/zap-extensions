@@ -49,10 +49,9 @@ public class CacheController {
 
     private static final Logger logger = LogManager.getLogger(CacheController.class);
 
-    public CacheController(HttpSender httpSender, HttpMessage base, ParamDiggerConfig config) {
+    public CacheController(HttpSender httpSender, ParamDiggerConfig config) {
 
         this.httpSender = httpSender;
-        this.base = base;
         this.config = config;
         this.cache = new Cache();
     }
@@ -85,8 +84,11 @@ public class CacheController {
             msg.setRequestHeader(headers);
             httpSender.sendAndReceive(msg);
 
+            /* Set base response for comparison */
+            this.base = msg;
+
             /* Analyze Response Headers */
-            HttpResponseHeader responseHeader = msg.getResponseHeader();
+            HttpResponseHeader responseHeader = this.base.getResponseHeader();
             List<HttpHeaderField> responseHeaders = responseHeader.getHeaders();
             for (HttpHeaderField header : responseHeaders) {
                 String headerName = header.getName().toLowerCase();
@@ -208,10 +210,20 @@ public class CacheController {
                     if (this.checkCacheHit(indicValue, cache)) {
                         // TODO show output that Method purging didn't work.
                     } else {
-                        cache.setCacheBusterFound(true);
-                        cache.setCacheBusterIsHttpMethod(true);
-                        cache.setCacheBusterName(httpMethods[i]);
-                        this.bustedMessage = msg;
+                        /* Now check If we have a hit to determine that the response is from cache. */
+                        httpSender.sendAndReceive(msg);
+                        if (msg.getResponseHeader().getStatusCode()
+                                == base.getResponseHeader().getStatusCode()) {
+                            indicValue = msg.getResponseHeader().getHeader(cache.getIndicator());
+                            if (this.checkCacheHit(indicValue, cache)) {
+                                cache.setCacheBusterFound(true);
+                                cache.setCacheBusterIsHttpMethod(true);
+                                cache.setCacheBusterName(httpMethods[i]);
+                                this.bustedMessage = msg;
+                            } else {
+                                // TODO show output that Method purging didn't work.
+                            }
+                        }
                     }
                 }
             } else {
@@ -316,10 +328,20 @@ public class CacheController {
                     if (this.checkCacheHit(indicValue, cache)) {
                         // TODO show output that Cookie purging didn't work.
                     } else {
-                        cache.setCacheBusterFound(true);
-                        cache.setCacheBusterIsCookie(true);
-                        cache.setCacheBusterName(cookies.get(i));
-                        this.bustedMessage = msg;
+                        /* Now we try for a hit to determine the cachebuster works. */
+                        httpSender.sendAndReceive(msg);
+                        if (msg.getResponseHeader().getStatusCode()
+                                == base.getResponseHeader().getStatusCode()) {
+                            indicValue = msg.getResponseHeader().getHeader(cache.getIndicator());
+                            if (this.checkCacheHit(indicValue, cache)) {
+                                cache.setCacheBusterFound(true);
+                                cache.setCacheBusterIsCookie(true);
+                                cache.setCacheBusterName(cookies.get(i));
+                                this.bustedMessage = msg;
+                            } else {
+                                // TODO show output that Cookie purging didn't work.
+                            }
+                        }
                     }
                 }
             } else {
@@ -422,10 +444,21 @@ public class CacheController {
                         // TODO show output that headr %H was tried as a cache buster but failed to
                         // work
                     } else {
-                        cache.setCacheBusterFound(true);
-                        cache.setCacheBusterIsHeader(true);
-                        cache.setCacheBusterName(headerList[i]);
-                        this.bustedMessage = msg;
+                        /* Now we try for a hit to dtermine the cachebuster works and the response is from the cache. */
+                        httpSender.sendAndReceive(msg);
+                        if (msg.getResponseHeader().getStatusCode()
+                                == base.getResponseHeader().getStatusCode()) {
+                            indicValue = msg.getResponseHeader().getHeader(cache.getIndicator());
+                            if (this.checkCacheHit(indicValue, cache)) {
+                                cache.setCacheBusterFound(true);
+                                cache.setCacheBusterIsHeader(true);
+                                cache.setCacheBusterName(headerList[i]);
+                                this.bustedMessage = msg;
+                            } else {
+                                // TODO show output that header %H was tried as a cache buster but
+                                // failed to work
+                            }
+                        }
                     }
                 }
             } else {
@@ -543,10 +576,22 @@ public class CacheController {
                     // TODO show output that identifier defined in config.getCacheBusterName() was
                     // not successfull
                 } else {
-                    cache.setCacheBusterFound(true);
-                    cache.setCacheBusterIsParameter(true);
-                    cache.setCacheBusterName(config.getCacheBusterName());
-                    this.bustedMessage = msg;
+                    /* Now we try to hit the cache to verify that the cachebuster works and the response is from the cache. */
+                    httpSender.sendAndReceive(msg);
+                    if (msg.getResponseHeader().getStatusCode()
+                            == base.getResponseHeader().getStatusCode()) {
+                        indicValue = msg.getResponseHeader().getHeader(cache.getIndicator());
+                        if (this.checkCacheHit(indicValue, cache)) {
+                            cache.setCacheBusterFound(true);
+                            cache.setCacheBusterIsHeader(false);
+                            cache.setCacheBusterName(config.getCacheBusterName());
+                            this.bustedMessage = msg;
+                        } else {
+                            // TODO show output that identifier defined in
+                            // config.getCacheBusterName()
+                            // was not successfull
+                        }
+                    }
                 }
             }
         } else {
@@ -651,7 +696,9 @@ public class CacheController {
                 }
             }
         }
-        if (indicValue.contains("HIT") || indicValue.contains("hit")) {
+        if (indicValue.contains("HIT")
+                || indicValue.contains("hit")
+                || indicValue.contains("Hit")) {
             return true;
         }
         return false;
