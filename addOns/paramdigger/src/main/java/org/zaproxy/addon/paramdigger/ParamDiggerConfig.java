@@ -407,4 +407,8 @@ public class ParamDiggerConfig {
         }
         return initCookieList;
     }
+
+    public void setCacheBustingCookies(List<String> cList) {
+        this.initCookieList = cList;
+    }
 }

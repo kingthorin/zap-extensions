@@ -25,7 +25,9 @@ import static org.hamcrest.Matchers.equalTo;
 
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +52,7 @@ public class CacheControllerUnitTest extends TestUtils {
 
     @Test
     void shouldFindCacheWithParameterCacheBuster() throws Exception {
+        // Given
         String path = "/test";
         Map<String, String> params = new HashMap<>();
         this.nano.addHandler(
@@ -88,11 +91,162 @@ public class CacheControllerUnitTest extends TestUtils {
                 });
         String url = this.getHttpMessage(path).getRequestHeader().getURI().toString();
         config.setUrl(url);
+
+        // When
         cacheController = new CacheController(this.httpSender, config);
 
+        // Then
         assertThat(cacheController.isCached(Method.GET), equalTo(true));
         assertThat(cacheController.getCache().getIndicator(), equalTo("x-cache"));
         assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
         assertThat(cacheController.getCache().isCacheBusterIsParameter(), equalTo(true));
+    }
+
+    @Test
+    void shouldNotFindCacheWithAnyCacheBuster() throws Exception {
+        // Given
+        String path = "/test";
+        this.nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String header = "x-cache";
+                        String value = "miss";
+                        Response response =
+                                newFixedLengthResponse(
+                                        getHtml(
+                                                "AttributeName.html",
+                                                new String[][] {{"q", ""}, {"p", ""}}));
+                        response.addHeader(header, value);
+                        return response;
+                    }
+                });
+        String url = this.getHttpMessage(path).getRequestHeader().getURI().toString();
+        config.setUrl(url);
+        config.setCacheBusterName("p");
+
+        // When
+        cacheController = new CacheController(this.httpSender, config);
+
+        // Then
+        assertThat(cacheController.isCached(Method.GET), equalTo(false));
+        assertThat(cacheController.getCache().getIndicator(), equalTo("x-cache"));
+        assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(false));
+        assertThat(cacheController.getCache().isCacheBusterIsParameter(), equalTo(false));
+        assertThat(cacheController.getCache().isCacheBusterIsHeader(), equalTo(false));
+        assertThat(cacheController.getCache().isCacheBusterIsCookie(), equalTo(false));
+    }
+
+    @Test
+    void shouldFindCacheWithHeaderCacheBuster() throws Exception {
+        // Given
+        String path = "/test";
+        Map<String, String> headers = new HashMap<>();
+        this.nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        Map<String, String> hs = session.getHeaders();
+                        String header = "x-cache";
+                        String value = "miss";
+
+                        for (Map.Entry<String, String> entry : hs.entrySet()) {
+                            if (!headers.containsKey(entry.getKey())) {
+                                headers.put(entry.getKey(), entry.getValue());
+                                value = "miss";
+                            } else if (headers.get(entry.getKey()).equals(entry.getValue())) {
+                                value = "hit";
+                            } else {
+                                value = "miss";
+                            }
+                        }
+                        Response response =
+                                newFixedLengthResponse(
+                                        getHtml(
+                                                "AttributeName.html",
+                                                new String[][] {{"q", ""}, {"p", ""}}));
+                        response.addHeader(header, value);
+                        response.addHeader("p", "1");
+                        return response;
+                    }
+                });
+        String url = this.getHttpMessage(path).getRequestHeader().getURI().toString();
+        config.setUrl(url);
+        config.setCacheBusterName("p");
+
+        // When
+        cacheController = new CacheController(this.httpSender, config);
+
+        // Then
+        assertThat(cacheController.isCached(Method.GET), equalTo(true));
+        assertThat(cacheController.getCache().getIndicator(), equalTo("x-cache"));
+        assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterIsHeader(), equalTo(true));
+    }
+
+    @Test
+    void shouldFindCacheWithCookieCacheBuster() throws Exception {
+        // Given
+        String path = "/test";
+        Map<String, String> cookies = new HashMap<>();
+        List<String> cList = new ArrayList<>();
+        cList.add("p");
+        cList.add("q");
+
+        this.nano.addHandler(
+                new NanoServerHandler(path) {
+                    int count = 0;
+
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        Iterator<String> c = session.getCookies().iterator();
+                        List<String> cs = new ArrayList<>();
+                        c.forEachRemaining(cs::add);
+
+                        String header = "x-cache";
+                        String value = "miss";
+
+                        for (String entry : cs) {
+                            if (!cookies.containsKey(entry)
+                                    && (entry.equalsIgnoreCase("p")
+                                            || entry.equalsIgnoreCase("q"))) {
+                                cookies.put(entry, session.getCookies().read(entry));
+                                value = "miss";
+                            } else if (cookies.get(entry)
+                                    .equals(session.getCookies().read(entry))) {
+                                value = "hit";
+                            } else {
+                                value = "miss";
+                            }
+                        }
+
+                        if (count == 0) {
+                            value = "miss";
+                            count++;
+                        } else if (cs.isEmpty() && count > 0) {
+                            value = "hit";
+                        }
+                        Response response =
+                                newFixedLengthResponse(
+                                        getHtml(
+                                                "AttributeName.html",
+                                                new String[][] {{"q", ""}, {"p", ""}}));
+                        response.addHeader(header, value);
+                        return response;
+                    }
+                });
+        String url = this.getHttpMessage(path).getRequestHeader().getURI().toString();
+        config.setUrl(url);
+        config.setCacheBusterName("p");
+        config.setCacheBustingCookies(cList);
+
+        // When
+        cacheController = new CacheController(this.httpSender, config);
+
+        // Then
+        assertThat(cacheController.isCached(Method.GET), equalTo(true));
+        assertThat(cacheController.getCache().getIndicator(), equalTo("x-cache"));
+        assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterIsCookie(), equalTo(true));
     }
 }
