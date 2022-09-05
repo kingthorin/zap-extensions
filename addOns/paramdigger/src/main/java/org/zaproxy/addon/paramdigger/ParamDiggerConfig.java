@@ -75,7 +75,8 @@ public class ParamDiggerConfig {
         this.url = "";
         this.threadCount = 4;
         this.urlGuessChunkSize = 2;
-        this.buster = 10;
+        this.buster = 4;
+        this.busterThreshold = -1;
     }
 
     public String getUrl() {

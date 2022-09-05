@@ -24,6 +24,7 @@ import java.net.HttpCookie;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 import org.apache.commons.httpclient.URI;
 import org.apache.commons.lang.StringUtils;
 import org.apache.logging.log4j.LogManager;
@@ -135,27 +136,27 @@ public class CacheController {
                 // was found the time will be measured as cache hit/miss indicator.
             } else {
                 alwaysMiss = this.checkAlwaysMiss(url, method, cache);
-                /* If it's not an always miss, this means we can use a cachebuster */
-                if (!alwaysMiss) {
-                    /* Check if a query parameter can be used a cache buster. */
-                    if (!cache.isCacheBusterFound()) {
-                        this.cacheBusterParameter(url, method, cache);
-                    }
+            }
+            /* If it's not an always miss, this means we can use a cachebuster */
+            if (!alwaysMiss) {
+                /* Check if a query parameter can be used a cache buster. */
+                if (!cache.isCacheBusterFound()) {
+                    this.cacheBusterParameter(url, method, cache);
+                }
 
-                    /* Check if a header can be used as a cache buster. */
-                    if (!cache.isCacheBusterFound()) {
-                        this.cacheBusterHeader(url, method, cache);
-                    }
+                /* Check if a header can be used as a cache buster. */
+                if (!cache.isCacheBusterFound()) {
+                    this.cacheBusterHeader(url, method, cache);
+                }
 
-                    /* Check if a  cookmie can be used as a cache buster. */
-                    if (!cache.isCacheBusterFound()) {
-                        this.cacheBusterCookie(url, method, cache);
-                    }
+                /* Check if a  cookmie can be used as a cache buster. */
+                if (!cache.isCacheBusterFound()) {
+                    this.cacheBusterCookie(url, method, cache);
+                }
 
-                    /* Check if a HTTP method can be used as a cache buster. */
-                    if (!cache.isCacheBusterFound()) {
-                        this.cacheBusterHttpMethod(url, method, cache);
-                    }
+                /* Check if a HTTP method can be used as a cache buster. */
+                if (!cache.isCacheBusterFound()) {
+                    this.cacheBusterHttpMethod(url, method, cache);
                 }
             }
         } catch (Exception e) {
@@ -463,6 +464,31 @@ public class CacheController {
                 }
             } else {
                 /* Time is our friend */
+                /* First let's determine a threshold  */
+
+                /* First we send two requests with a random cachebuster to determine
+                the threshold value if we have opted in for default mode. */
+                if (config.getCacheBustingThreshold() == -1) {
+                    HttpRequestHeader headers2 = new HttpRequestHeader();
+                    headers2.setMethod(headers.getMethod());
+                    headers2.setURI(headers.getURI());
+                    headers2.setVersion(headers.getVersion());
+                    List<Integer> timeList = new ArrayList<>();
+                    for (int j = 0; j < 2; j++) {
+                        HttpMessage msg1 = new HttpMessage();
+                        String randHead =
+                                valueList[i]
+                                        + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
+                        headers2.addHeader(headerList[i], randHead);
+                        msg1.setRequestHeader(headers2);
+                        httpSender.sendAndReceive(msg1);
+                        timeList.add(msg1.getTimeElapsedMillis());
+                    }
+                    if (timeList.get(0) > timeList.get(1)) {
+                        config.setCacheBustingThreshold(timeList.get(0) - timeList.get(1));
+                    }
+                }
+
                 List<Integer> timeList = new ArrayList<Integer>();
                 /* Setting it to a hardcoded value of 4 so as to reduce the time complexity. */
                 for (int j = 0; j < 4; j++) {
@@ -513,21 +539,18 @@ public class CacheController {
      * @return a URL with a cachebuster parameter having a random value.
      */
     private String generateParameterString(String url) {
+        return this.createParameterString(
+                url,
+                config.getCacheBusterName(),
+                "" + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE));
+    }
+
+    private String createParameterString(String url, String param, String value) {
         String newUrl;
         if (url.contains("?")) {
-            newUrl =
-                    url
-                            + "&"
-                            + config.getCacheBusterName()
-                            + "="
-                            + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
+            newUrl = url + "&" + param + "=" + value;
         } else {
-            newUrl =
-                    url
-                            + "?"
-                            + config.getCacheBusterName()
-                            + "="
-                            + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
+            newUrl = url + "?" + param + "=" + value;
         }
         return newUrl;
     }
@@ -596,9 +619,43 @@ public class CacheController {
             }
         } else {
             /* This means we don't have any indicator and time is our only friend. */
+
+            /* First we send two requests with a random cachebuster to determine
+            the threshold value if we have opted in for default mode. */
+
+            if (config.getCacheBustingThreshold() == -1) {
+                HttpMessage msg1 = new HttpMessage();
+                List<Integer> timeList = new ArrayList<>();
+                for (int i = 0; i < 2; i++) {
+                    String randomBuster = UUID.randomUUID().toString().replace("-", "");
+                    String randomBusterValue =
+                            "" + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
+                    newUrl = this.createParameterString(url, randomBuster, randomBusterValue);
+                    headers.setURI(new URI(newUrl, true));
+                    headers.setVersion(HttpHeader.HTTP11);
+
+                    msg1.setRequestHeader(headers);
+                    httpSender.sendAndReceive(msg1);
+
+                    if (msg1.getResponseHeader().getStatusCode()
+                            == base.getResponseHeader().getStatusCode()) {
+                        timeList.add(msg1.getTimeElapsedMillis());
+                    }
+                }
+                if (timeList.get(0) > timeList.get(1)) {
+                    config.setCacheBustingThreshold(timeList.get(0) - timeList.get(1));
+                }
+            }
+
             List<Integer> times = new ArrayList<>();
+            String old = "";
             for (int i = 0; i < config.getCacheBustingTimes(); i++) {
-                newUrl = this.generateParameterString(url);
+                if (i % 2 == 0) {
+                    newUrl = this.generateParameterString(url);
+                    old = newUrl;
+                } else {
+                    newUrl = old;
+                }
                 headers.setURI(new URI(newUrl, true));
                 headers.setVersion(HttpHeader.HTTP11);
 
@@ -657,7 +714,9 @@ public class CacheController {
                 // faced.
             }
             String indicValue = msg.getResponseHeader().getHeader(cache.getIndicator());
-            if (indicValue == null || !this.checkCacheHit(indicValue, cache)) {
+            if (indicValue == null
+                    || indicValue.isEmpty()
+                    || !this.checkCacheHit(indicValue, cache)) {
                 return true;
             }
             return false;

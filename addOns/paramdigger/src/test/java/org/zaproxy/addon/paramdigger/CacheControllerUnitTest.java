@@ -271,6 +271,15 @@ public class CacheControllerUnitTest extends TestUtils {
                                     Thread.sleep(30);
                                 } catch (InterruptedException e) {
                                 }
+                            } else if (params.get(entry.getKey()) != null
+                                    && entry.getValue().get(0) != null
+                                    && !params.get(entry.getKey())
+                                            .equals(entry.getValue().get(0))) {
+                                try {
+                                    Thread.sleep(30);
+                                    params.put(entry.getKey(), entry.getValue().get(0));
+                                } catch (InterruptedException e) {
+                                }
                             }
                         }
                         if (count == 0) {
@@ -280,17 +289,19 @@ public class CacheControllerUnitTest extends TestUtils {
                             }
                             count++;
                         }
-                        return newFixedLengthResponse(
-                                getHtml(
-                                        "AttributeName.html",
-                                        new String[][] {{"q", ""}, {"p", ""}}));
+
+                        Response resp =
+                                newFixedLengthResponse(
+                                        getHtml(
+                                                "AttributeName.html",
+                                                new String[][] {{"q", ""}, {"p", ""}}));
+                        return resp;
                     }
                 });
 
         String url = getHttpMessage(path).getRequestHeader().getURI().toString();
         config.setUrl(url);
         config.setCacheBusterName("p");
-        config.setCacheBustingThreshold(20);
 
         // When
         cacheController = new CacheController(this.httpSender, config);
@@ -300,5 +311,77 @@ public class CacheControllerUnitTest extends TestUtils {
         assertThat(cacheController.getCache().hasTimeIndicator(), equalTo(true));
         assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
         assertThat(cacheController.getCache().isCacheBusterIsParameter(), equalTo(true));
+    }
+
+    @Test
+    void shouldFindCacheWithHeaderCacheBusterWhenNoIndicatorPresent()
+            throws HttpMalformedHeaderException {
+        String path = "/test";
+        Map<String, String> headers = new HashMap<>();
+        this.nano.addHandler(
+                new NanoServerHandler(path) {
+                    int count = 0;
+
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        Map<String, String> hs = session.getHeaders();
+                        for (Map.Entry<String, String> entry : hs.entrySet()) {
+                            if (!headers.containsKey(entry.getKey())) {
+                                headers.put(entry.getKey(), entry.getValue());
+                                try {
+                                    Thread.sleep(30);
+                                } catch (InterruptedException e) {
+                                    try {
+                                        Thread.sleep(40);
+                                    } catch (InterruptedException e1) {
+                                    }
+                                }
+                            } else if (headers.get(entry.getKey()) != null
+                                    && !headers.get(entry.getKey()).equals(entry.getValue())) {
+                                try {
+                                    Thread.sleep(40);
+                                    headers.put(entry.getKey(), entry.getValue());
+                                } catch (InterruptedException e) {
+                                    try {
+                                        Thread.sleep(40);
+                                    } catch (InterruptedException e1) {
+                                    }
+                                }
+                            }
+                        }
+
+                        if (count == 0) {
+                            try {
+                                Thread.sleep(30);
+                            } catch (InterruptedException e) {
+                                try {
+                                    Thread.sleep(40);
+                                } catch (InterruptedException e1) {
+                                }
+                            }
+                            count++;
+                        }
+
+                        Response resp =
+                                newFixedLengthResponse(
+                                        getHtml(
+                                                "AttributeName.html",
+                                                new String[][] {{"q", ""}, {"p", ""}}));
+                        return resp;
+                    }
+                });
+
+        String url = getHttpMessage(path).getRequestHeader().getURI().toString();
+        config.setUrl(url);
+        config.setCacheBusterName("p");
+
+        // When
+        cacheController = new CacheController(this.httpSender, config);
+
+        // Then
+        assertThat(cacheController.isCached(Method.GET), equalTo(true));
+        assertThat(cacheController.getCache().hasTimeIndicator(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterIsHeader(), equalTo(true));
     }
 }
