@@ -331,10 +331,6 @@ public class CacheControllerUnitTest extends TestUtils {
                                 try {
                                     Thread.sleep(30);
                                 } catch (InterruptedException e) {
-                                    try {
-                                        Thread.sleep(40);
-                                    } catch (InterruptedException e1) {
-                                    }
                                 }
                             } else if (headers.get(entry.getKey()) != null
                                     && !headers.get(entry.getKey()).equals(entry.getValue())) {
@@ -342,10 +338,6 @@ public class CacheControllerUnitTest extends TestUtils {
                                     Thread.sleep(40);
                                     headers.put(entry.getKey(), entry.getValue());
                                 } catch (InterruptedException e) {
-                                    try {
-                                        Thread.sleep(40);
-                                    } catch (InterruptedException e1) {
-                                    }
                                 }
                             }
                         }
@@ -354,10 +346,6 @@ public class CacheControllerUnitTest extends TestUtils {
                             try {
                                 Thread.sleep(30);
                             } catch (InterruptedException e) {
-                                try {
-                                    Thread.sleep(40);
-                                } catch (InterruptedException e1) {
-                                }
                             }
                             count++;
                         }

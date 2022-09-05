@@ -512,7 +512,7 @@ public class CacheController {
                 boolean skip = false;
                 for (int j = 1; j < timeList.size(); j++) {
                     if ((j % 2 == 1)
-                            && (timeList.get(i - 1) - timeList.get(i)
+                            && (timeList.get(j - 1) - timeList.get(j)
                                     < config.getCacheBustingThreshold())) {
                         /* Since the response was faster then usual timing. We can assume it came from a cache. */
                         skip = true;
