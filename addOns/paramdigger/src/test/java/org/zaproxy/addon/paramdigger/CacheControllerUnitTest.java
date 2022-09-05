@@ -33,6 +33,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.parosproxy.paros.model.Model;
+import org.parosproxy.paros.network.HttpMalformedHeaderException;
 import org.parosproxy.paros.network.HttpSender;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 import org.zaproxy.zap.testutils.TestUtils;
@@ -53,7 +54,7 @@ public class CacheControllerUnitTest extends TestUtils {
     @Test
     void shouldFindCacheWithParameterCacheBuster() throws Exception {
         // Given
-        String path = "/test";
+        String path = "/testparam";
         Map<String, String> params = new HashMap<>();
         this.nano.addHandler(
                 new NanoServerHandler(path) {
@@ -105,7 +106,7 @@ public class CacheControllerUnitTest extends TestUtils {
     @Test
     void shouldNotFindCacheWithAnyCacheBuster() throws Exception {
         // Given
-        String path = "/test";
+        String path = "/testnocache";
         this.nano.addHandler(
                 new NanoServerHandler(path) {
                     @Override
@@ -140,7 +141,7 @@ public class CacheControllerUnitTest extends TestUtils {
     @Test
     void shouldFindCacheWithHeaderCacheBuster() throws Exception {
         // Given
-        String path = "/test";
+        String path = "/testheader";
         Map<String, String> headers = new HashMap<>();
         this.nano.addHandler(
                 new NanoServerHandler(path) {
@@ -187,7 +188,7 @@ public class CacheControllerUnitTest extends TestUtils {
     @Test
     void shouldFindCacheWithCookieCacheBuster() throws Exception {
         // Given
-        String path = "/test";
+        String path = "/testcookie";
         Map<String, String> cookies = new HashMap<>();
         List<String> cList = new ArrayList<>();
         cList.add("p");
@@ -212,8 +213,9 @@ public class CacheControllerUnitTest extends TestUtils {
                                             || entry.equalsIgnoreCase("q"))) {
                                 cookies.put(entry, session.getCookies().read(entry));
                                 value = "miss";
-                            } else if (cookies.get(entry)
-                                    .equals(session.getCookies().read(entry))) {
+                            } else if (cookies.get(entry) != null
+                                    && cookies.get(entry)
+                                            .equals(session.getCookies().read(entry))) {
                                 value = "hit";
                             } else {
                                 value = "miss";
@@ -248,5 +250,55 @@ public class CacheControllerUnitTest extends TestUtils {
         assertThat(cacheController.getCache().getIndicator(), equalTo("x-cache"));
         assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
         assertThat(cacheController.getCache().isCacheBusterIsCookie(), equalTo(true));
+    }
+
+    @Test
+    void shouldFindCacheWithParameterCacheBusterWhenNoIndicatorPresent()
+            throws HttpMalformedHeaderException {
+        String path = "/test";
+        Map<String, String> params = new HashMap<>();
+        this.nano.addHandler(
+                new NanoServerHandler(path) {
+                    int count = 0;
+
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        Map<String, List<String>> ps = session.getParameters();
+                        for (Map.Entry<String, List<String>> entry : ps.entrySet()) {
+                            if (!params.containsKey(entry.getKey())) {
+                                params.put(entry.getKey(), entry.getValue().get(0));
+                                try {
+                                    Thread.sleep(30);
+                                } catch (InterruptedException e) {
+                                }
+                            }
+                        }
+                        if (count == 0) {
+                            try {
+                                Thread.sleep(30);
+                            } catch (InterruptedException e) {
+                            }
+                            count++;
+                        }
+                        return newFixedLengthResponse(
+                                getHtml(
+                                        "AttributeName.html",
+                                        new String[][] {{"q", ""}, {"p", ""}}));
+                    }
+                });
+
+        String url = getHttpMessage(path).getRequestHeader().getURI().toString();
+        config.setUrl(url);
+        config.setCacheBusterName("p");
+        config.setCacheBustingThreshold(20);
+
+        // When
+        cacheController = new CacheController(this.httpSender, config);
+
+        // Then
+        assertThat(cacheController.isCached(Method.GET), equalTo(true));
+        assertThat(cacheController.getCache().hasTimeIndicator(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterIsParameter(), equalTo(true));
     }
 }
