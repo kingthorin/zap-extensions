@@ -229,6 +229,32 @@ public class CacheController {
                 }
             } else {
                 /* Since no indicator was found we try time difference. */
+                /* Decide threshold */
+                if (config.getCacheBustingThreshold() == -1) {
+                    HttpRequestHeader headers2 = new HttpRequestHeader();
+                    List<Integer> times = new ArrayList<Integer>();
+                    for (int j = 0; j < 2; j++) {
+                        headers2.setURI(new URI(url, true));
+                        headers2.setVersion(HttpHeader.HTTP11);
+                        if (j % 2 == 0) {
+                            headers2.setMethod(httpMethods[i]);
+                        } else {
+                            headers2.setMethod(method.toString());
+                        }
+                        HttpMessage msg = new HttpMessage();
+                        msg.setRequestHeader(headers2);
+                        httpSender.sendAndReceive(msg);
+
+                        if (msg.getResponseHeader().getStatusCode()
+                                == base.getResponseHeader().getStatusCode()) {
+                            times.add(msg.getTimeElapsedMillis());
+                        }
+                    }
+                    if (times.get(0) > times.get(1)) {
+                        config.setCacheBustingThreshold(times.get(0) - times.get(1));
+                    }
+                }
+
                 List<Integer> times = new ArrayList<>();
                 HttpMessage msg = new HttpMessage();
                 for (int j = 0; j < 4; j++) {
@@ -261,7 +287,7 @@ public class CacheController {
                 boolean skip = false;
                 for (int j = 1; j < times.size(); j++) {
                     if ((j % 2 == 1)
-                            && (times.get(i - 1) - times.get(i)
+                            && (times.get(j - 1) - times.get(j)
                                     < config.getCacheBustingThreshold())) {
                         /* Since the response was faster then usual timing. We can assume it came from a cache. */
                         skip = true;
@@ -347,6 +373,41 @@ public class CacheController {
                 }
             } else {
                 /* time has to be considered. */
+                /* First let's calculate the threshold. */
+                if (config.getCacheBustingThreshold() == -1) {
+                    HttpRequestHeader headers1 = new HttpRequestHeader();
+                    headers1.setURI(new URI(url, true));
+                    headers1.setVersion(HttpHeader.HTTP11);
+                    headers1.setMethod(headers.getMethod());
+
+                    List<Integer> times = new ArrayList<>();
+
+                    for (int j = 0; j < 2; j++) {
+                        if (j % 2 == 0) {
+                            String cb =
+                                    (Integer.valueOf(
+                                                    new Random(RANDOM_SEED).nextInt()
+                                                            & Integer.MAX_VALUE))
+                                            .toString();
+                            HttpCookie cookie = new HttpCookie(cookies.get(i), cb);
+                            List<HttpCookie> cookieList = new ArrayList<>();
+                            cookieList.add(cookie);
+                            headers1.setCookies(cookieList);
+                        }
+                        HttpMessage msg1 = new HttpMessage();
+                        msg1.setRequestHeader(headers1);
+                        httpSender.sendAndReceive(msg1);
+
+                        if (msg1.getResponseHeader().getStatusCode()
+                                == base.getResponseHeader().getStatusCode()) {
+                            times.add(msg1.getTimeElapsedMillis());
+                        }
+                    }
+                    if (times.get(0) > times.get(1)) {
+                        config.setCacheBustingThreshold(times.get(0) - times.get(1));
+                    }
+                }
+
                 List<Integer> times = new ArrayList<>();
                 HttpMessage msg = new HttpMessage();
                 for (int j = 0; j < 4; j++) {
@@ -376,7 +437,7 @@ public class CacheController {
 
                 for (int j = 1; j < times.size(); j++) {
                     if ((j % 2 == 1)
-                            && (times.get(i - 1) - times.get(i)
+                            && (times.get(j - 1) - times.get(j)
                                     < config.getCacheBustingThreshold())) {
                         /* Since the response was faster then usual timing. We can assume it came from a cache. */
                         skip = true;
