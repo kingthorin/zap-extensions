@@ -268,7 +268,7 @@ public class CacheControllerUnitTest extends TestUtils {
                             if (!params.containsKey(entry.getKey())) {
                                 params.put(entry.getKey(), entry.getValue().get(0));
                                 try {
-                                    Thread.sleep(30);
+                                    Thread.sleep(60);
                                 } catch (InterruptedException e) {
                                 }
                             } else if (params.get(entry.getKey()) != null
@@ -276,7 +276,7 @@ public class CacheControllerUnitTest extends TestUtils {
                                     && !params.get(entry.getKey())
                                             .equals(entry.getValue().get(0))) {
                                 try {
-                                    Thread.sleep(30);
+                                    Thread.sleep(60);
                                     params.put(entry.getKey(), entry.getValue().get(0));
                                 } catch (InterruptedException e) {
                                 }
@@ -284,7 +284,7 @@ public class CacheControllerUnitTest extends TestUtils {
                         }
                         if (count == 0) {
                             try {
-                                Thread.sleep(30);
+                                Thread.sleep(60);
                             } catch (InterruptedException e) {
                             }
                             count++;
@@ -329,13 +329,13 @@ public class CacheControllerUnitTest extends TestUtils {
                             if (!headers.containsKey(entry.getKey())) {
                                 headers.put(entry.getKey(), entry.getValue());
                                 try {
-                                    Thread.sleep(30);
+                                    Thread.sleep(60);
                                 } catch (InterruptedException e) {
                                 }
                             } else if (headers.get(entry.getKey()) != null
                                     && !headers.get(entry.getKey()).equals(entry.getValue())) {
                                 try {
-                                    Thread.sleep(40);
+                                    Thread.sleep(60);
                                     headers.put(entry.getKey(), entry.getValue());
                                 } catch (InterruptedException e) {
                                 }
@@ -344,7 +344,7 @@ public class CacheControllerUnitTest extends TestUtils {
 
                         if (count == 0) {
                             try {
-                                Thread.sleep(30);
+                                Thread.sleep(60);
                             } catch (InterruptedException e) {
                             }
                             count++;
