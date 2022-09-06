@@ -270,6 +270,7 @@ public class CacheControllerUnitTest extends TestUtils {
                                 try {
                                     Thread.sleep(60);
                                 } catch (InterruptedException e) {
+                                    e.printStackTrace();
                                 }
                             } else if (params.get(entry.getKey()) != null
                                     && entry.getValue().get(0) != null
@@ -279,6 +280,7 @@ public class CacheControllerUnitTest extends TestUtils {
                                     Thread.sleep(60);
                                     params.put(entry.getKey(), entry.getValue().get(0));
                                 } catch (InterruptedException e) {
+                                    e.printStackTrace();
                                 }
                             }
                         }
@@ -286,6 +288,7 @@ public class CacheControllerUnitTest extends TestUtils {
                             try {
                                 Thread.sleep(60);
                             } catch (InterruptedException e) {
+                                e.printStackTrace();
                             }
                             count++;
                         }
@@ -331,13 +334,16 @@ public class CacheControllerUnitTest extends TestUtils {
                                 try {
                                     Thread.sleep(60);
                                 } catch (InterruptedException e) {
+                                    e.printStackTrace();
                                 }
                             } else if (headers.get(entry.getKey()) != null
+                                    && entry.getValue() != null
                                     && !headers.get(entry.getKey()).equals(entry.getValue())) {
                                 try {
                                     Thread.sleep(60);
                                     headers.put(entry.getKey(), entry.getValue());
                                 } catch (InterruptedException e) {
+                                    e.printStackTrace();
                                 }
                             }
                         }
@@ -345,9 +351,10 @@ public class CacheControllerUnitTest extends TestUtils {
                         if (count == 0) {
                             try {
                                 Thread.sleep(60);
+                                count++;
                             } catch (InterruptedException e) {
+                                e.printStackTrace();
                             }
-                            count++;
                         }
 
                         Response resp =

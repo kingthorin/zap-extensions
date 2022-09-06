@@ -255,9 +255,10 @@ public class CacheController {
                     }
                 }
 
+                /* Try purging with caclculated or givn threshold. */
                 List<Integer> times = new ArrayList<>();
                 HttpMessage msg = new HttpMessage();
-                for (int j = 0; j < 4; j++) {
+                for (int j = 0; j < 2; j++) {
                     if (j % 2 == 0) {
                         headers.setMethod(httpMethods[i]);
                     } else {
@@ -408,9 +409,10 @@ public class CacheController {
                     }
                 }
 
+                /* Try cookie busting with calculated or given threshold. */
                 List<Integer> times = new ArrayList<>();
                 HttpMessage msg = new HttpMessage();
-                for (int j = 0; j < 4; j++) {
+                for (int j = 0; j < 2; j++) {
                     if (j % 2 == 0) {
                         String cb =
                                 (Integer.valueOf(
@@ -552,7 +554,7 @@ public class CacheController {
 
                 List<Integer> timeList = new ArrayList<Integer>();
                 /* Setting it to a hardcoded value of 4 so as to reduce the time complexity. */
-                for (int j = 0; j < 4; j++) {
+                for (int j = 0; j < 2; j++) {
                     String cacheBusterH =
                             valueList[i] + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
                     if (headers.getHeader(headerList[i]) == null) {
