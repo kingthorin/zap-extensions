@@ -257,10 +257,9 @@ public class CacheControllerUnitTest extends TestUtils {
             throws HttpMalformedHeaderException {
         String path = "/testnoindicparam";
         Map<String, String> params = new HashMap<>();
+        System.out.println("\n\n[***] Parameter Cache buster test with timing index: \n\n");
         this.nano.addHandler(
                 new NanoServerHandler(path) {
-                    int count = 0;
-
                     @Override
                     protected Response serve(IHTTPSession session) {
                         Map<String, List<String>> ps = session.getParameters();
@@ -284,15 +283,6 @@ public class CacheControllerUnitTest extends TestUtils {
                                 }
                             }
                         }
-                        if (count == 0) {
-                            try {
-                                Thread.sleep(60);
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                            count++;
-                        }
-
                         Response resp =
                                 newFixedLengthResponse(
                                         getHtml(
@@ -321,10 +311,9 @@ public class CacheControllerUnitTest extends TestUtils {
             throws HttpMalformedHeaderException {
         String path = "/testnoindicheader";
         Map<String, String> headers = new HashMap<>();
+        System.out.println("\n\n [***] Header Cache buster test with timing index: \n\n");
         this.nano.addHandler(
                 new NanoServerHandler(path) {
-                    int count = 0;
-
                     @Override
                     protected Response serve(IHTTPSession session) {
                         Map<String, String> hs = session.getHeaders();
@@ -347,15 +336,6 @@ public class CacheControllerUnitTest extends TestUtils {
                                 }
                             }
                         }
-
-                        // if (count == 0) {
-                        //     try {
-                        //         Thread.sleep(60);
-                        //         count++;
-                        //     } catch (InterruptedException e) {
-                        //         e.printStackTrace();
-                        //     }
-                        // }
 
                         Response resp =
                                 newFixedLengthResponse(

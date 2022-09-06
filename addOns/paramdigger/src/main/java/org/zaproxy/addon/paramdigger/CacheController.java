@@ -21,9 +21,9 @@ package org.zaproxy.addon.paramdigger;
 
 import java.io.IOException;
 import java.net.HttpCookie;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 import org.apache.commons.httpclient.URI;
 import org.apache.commons.lang.StringUtils;
 import org.apache.logging.log4j.LogManager;
@@ -44,6 +44,7 @@ public class CacheController {
     private Cache cache;
     private boolean cachingCheck;
     private HttpMessage bustedMessage;
+    private SecureRandom random;
     private static final String METHOD_NOT_SUPPORTED = "paramdigger.method.not.supported";
     private static final int RANDOM_SEED = 1000;
 
@@ -54,6 +55,7 @@ public class CacheController {
         this.httpSender = httpSender;
         this.config = config;
         this.cache = new Cache();
+        this.random = new SecureRandom();
     }
 
     /**
@@ -337,9 +339,7 @@ public class CacheController {
                             Constant.messages.getString(METHOD_NOT_SUPPORTED, method));
             }
             if (cache.getIndicator() != null && !cache.getIndicator().isEmpty()) {
-                String cb =
-                        (Integer.valueOf(new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE))
-                                .toString();
+                String cb = (Integer.valueOf(random.nextInt(RANDOM_SEED))).toString();
                 HttpCookie cookie = new HttpCookie(cookies.get(i), cb);
                 List<HttpCookie> cookieList = new ArrayList<>();
                 cookieList.add(cookie);
@@ -384,11 +384,7 @@ public class CacheController {
 
                     for (int j = 0; j < 2; j++) {
                         if (j % 2 == 0) {
-                            String cb =
-                                    (Integer.valueOf(
-                                                    new Random(RANDOM_SEED).nextInt()
-                                                            & Integer.MAX_VALUE))
-                                            .toString();
+                            String cb = (Integer.valueOf(random.nextInt(RANDOM_SEED))).toString();
                             HttpCookie cookie = new HttpCookie(cookies.get(i), cb);
                             List<HttpCookie> cookieList = new ArrayList<>();
                             cookieList.add(cookie);
@@ -413,11 +409,7 @@ public class CacheController {
                 HttpMessage msg = new HttpMessage();
                 for (int j = 0; j < 2; j++) {
                     if (j % 2 == 0) {
-                        String cb =
-                                (Integer.valueOf(
-                                                new Random(RANDOM_SEED).nextInt()
-                                                        & Integer.MAX_VALUE))
-                                        .toString();
+                        String cb = (Integer.valueOf(random.nextInt(RANDOM_SEED))).toString();
                         HttpCookie cookie = new HttpCookie(cookies.get(i), cb);
                         List<HttpCookie> cookieList = new ArrayList<>();
                         cookieList.add(cookie);
@@ -493,8 +485,7 @@ public class CacheController {
 
             /* If we have found an indicator then we use it. */
             if (cache.getIndicator() != null && !cache.getIndicator().isEmpty()) {
-                String cacheBusterH =
-                        valueList[i] + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
+                String cacheBusterH = valueList[i] + random.nextInt(RANDOM_SEED);
                 headers.addHeader(headerList[i], cacheBusterH);
                 msg.setRequestHeader(headers);
 
@@ -539,13 +530,9 @@ public class CacheController {
                     for (int j = 0; j < 2; j++) {
                         HttpMessage msg1 = new HttpMessage();
                         if (j % 2 == 0) {
-                            randHead = valueList[i] + (new Random().nextInt(RANDOM_SEED));
+                            randHead = valueList[i] + random.nextInt(RANDOM_SEED);
                         }
-                        if (headers2.getHeader(headerList[i]) == null) {
-                            headers2.addHeader(headerList[i], randHead);
-                        } else {
-                            headers2.setHeader(headerList[i], randHead);
-                        }
+                        headers2.setHeader(headerList[i], randHead);
                         msg1.setRequestHeader(headers2);
                         httpSender.sendAndReceive(msg1);
                         System.out.println(
@@ -572,13 +559,9 @@ public class CacheController {
                 String cacheBusterH = "";
                 for (int j = 0; j < 4; j++) {
                     if (j % 2 == 0) {
-                        cacheBusterH = valueList[i] + (new Random().nextInt(RANDOM_SEED));
+                        cacheBusterH = valueList[i] + random.nextInt(RANDOM_SEED);
                     }
-                    if (headers.getHeader(headerList[i]) == null) {
-                        headers.addHeader(headerList[i], cacheBusterH);
-                    } else {
-                        headers.setHeader(headerList[i], cacheBusterH);
-                    }
+                    headers.setHeader(headerList[i], cacheBusterH);
                     msg.setRequestHeader(headers);
 
                     httpSender.sendAndReceive(msg);
@@ -628,7 +611,7 @@ public class CacheController {
      */
     private String generateParameterString(String url) {
         return this.createParameterString(
-                url, config.getCacheBusterName(), "" + (new Random().nextInt(RANDOM_SEED)));
+                url, config.getCacheBusterName(), "" + random.nextInt(RANDOM_SEED));
     }
 
     private String createParameterString(String url, String param, String value) {
@@ -713,7 +696,7 @@ public class CacheController {
                 HttpMessage msg1 = new HttpMessage();
                 List<Integer> timeList = new ArrayList<>();
                 String randomBuster = "zap";
-                String randomBusterValue = "" + (new Random(RANDOM_SEED).nextInt(RANDOM_SEED));
+                String randomBusterValue = "" + random.nextInt(RANDOM_SEED);
                 for (int i = 0; i < 2; i++) {
                     newUrl = this.createParameterString(url, randomBuster, randomBusterValue);
                     headers.setURI(new URI(newUrl, true));
@@ -766,17 +749,20 @@ public class CacheController {
                 }
             }
 
+            boolean hits = true;
             for (int i = 1; i < times.size(); i++) {
                 if ((i % 2 == 1)
                         && (times.get(i - 1) - times.get(i) < config.getCacheBustingThreshold())) {
-                    return;
+                    hits = false;
                 }
             }
-            cache.setTimeIndicator(true);
-            cache.setCacheBusterFound(true);
-            cache.setCacheBusterIsParameter(true);
-            cache.setCacheBusterName(config.getCacheBusterName());
-            this.bustedMessage = msg;
+            if (hits) {
+                cache.setTimeIndicator(true);
+                cache.setCacheBusterFound(true);
+                cache.setCacheBusterIsParameter(true);
+                cache.setCacheBusterName(config.getCacheBusterName());
+                this.bustedMessage = msg;
+            }
         }
     }
 
