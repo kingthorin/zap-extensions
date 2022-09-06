@@ -339,23 +339,23 @@ public class CacheControllerUnitTest extends TestUtils {
                             } else if (headers.get(entry.getKey()) != null
                                     && entry.getValue() != null
                                     && !headers.get(entry.getKey()).equals(entry.getValue())) {
+                                headers.put(entry.getKey(), entry.getValue());
                                 try {
                                     Thread.sleep(60);
-                                    headers.put(entry.getKey(), entry.getValue());
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
                             }
                         }
 
-                        if (count == 0) {
-                            try {
-                                Thread.sleep(60);
-                                count++;
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                        }
+                        // if (count == 0) {
+                        //     try {
+                        //         Thread.sleep(60);
+                        //         count++;
+                        //     } catch (InterruptedException e) {
+                        //         e.printStackTrace();
+                        //     }
+                        // }
 
                         Response resp =
                                 newFixedLengthResponse(

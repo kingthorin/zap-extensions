@@ -46,7 +46,7 @@ public class CacheController {
     private boolean cachingCheck;
     private HttpMessage bustedMessage;
     private static final String METHOD_NOT_SUPPORTED = "paramdigger.method.not.supported";
-    private static final int RANDOM_SEED = 100000;
+    private static final int RANDOM_SEED = 1000;
 
     private static final Logger logger = LogManager.getLogger(CacheController.class);
 
@@ -690,7 +690,8 @@ public class CacheController {
                 HttpMessage msg1 = new HttpMessage();
                 List<Integer> timeList = new ArrayList<>();
                 for (int i = 0; i < 2; i++) {
-                    String randomBuster = UUID.randomUUID().toString().replace("-", "");
+                    String randomBuster =
+                            UUID.randomUUID().toString().replace("-", "").substring(0, 4);
                     String randomBusterValue =
                             "" + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
                     newUrl = this.createParameterString(url, randomBuster, randomBusterValue);
