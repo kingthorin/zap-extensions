@@ -276,7 +276,7 @@ public class CacheControllerUnitTest extends TestUtils {
                                             .equals(entry.getValue().get(0))) {
                                 params.put(entry.getKey(), entry.getValue().get(0));
                                 try {
-                                    Thread.sleep(60);
+                                    Thread.sleep(70);
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
@@ -293,7 +293,6 @@ public class CacheControllerUnitTest extends TestUtils {
 
         String url = getHttpMessage(path).getRequestHeader().getURI().toString();
         config.setUrl(url);
-        config.setCacheBusterName("p");
 
         // When
         cacheController = new CacheController(this.httpSender, config);
@@ -302,7 +301,7 @@ public class CacheControllerUnitTest extends TestUtils {
         assertThat(cacheController.isCached(Method.GET), equalTo(true));
         assertThat(cacheController.getCache().hasTimeIndicator(), equalTo(true));
         assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
-        assertThat(cacheController.getCache().isCacheBusterIsHeader(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterIsParameter(), equalTo(true));
     }
 
     @Test
@@ -328,7 +327,7 @@ public class CacheControllerUnitTest extends TestUtils {
                                     && !headers.get(entry.getKey()).equals(entry.getValue())) {
                                 headers.put(entry.getKey(), entry.getValue());
                                 try {
-                                    Thread.sleep(60);
+                                    Thread.sleep(70);
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
@@ -346,7 +345,6 @@ public class CacheControllerUnitTest extends TestUtils {
 
         String url = getHttpMessage(path).getRequestHeader().getURI().toString();
         config.setUrl(url);
-        config.setCacheBusterName("p");
 
         // When
         cacheController = new CacheController(this.httpSender, config);
@@ -355,6 +353,6 @@ public class CacheControllerUnitTest extends TestUtils {
         assertThat(cacheController.isCached(Method.GET), equalTo(true));
         assertThat(cacheController.getCache().hasTimeIndicator(), equalTo(true));
         assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
-        assertThat(cacheController.getCache().isCacheBusterIsParameter(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterIsHeader(), equalTo(true));
     }
 }
