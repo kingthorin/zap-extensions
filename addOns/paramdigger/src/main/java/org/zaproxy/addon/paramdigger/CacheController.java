@@ -24,7 +24,6 @@ import java.net.HttpCookie;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import java.util.UUID;
 import org.apache.commons.httpclient.URI;
 import org.apache.commons.lang.StringUtils;
 import org.apache.logging.log4j.LogManager;
@@ -527,44 +526,70 @@ public class CacheController {
                 }
             } else {
                 /* Time is our friend */
-                /* First let's determine a threshold  */
-
                 /* First we send two requests with a random cachebuster to determine
                 the threshold value if we have opted in for default mode. */
+
                 if (config.getCacheBustingThreshold() == -1) {
                     HttpRequestHeader headers2 = new HttpRequestHeader();
                     headers2.setMethod(headers.getMethod());
                     headers2.setURI(headers.getURI());
                     headers2.setVersion(headers.getVersion());
                     List<Integer> timeList = new ArrayList<>();
+                    String randHead = "";
                     for (int j = 0; j < 2; j++) {
                         HttpMessage msg1 = new HttpMessage();
-                        String randHead =
-                                valueList[i]
-                                        + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
-                        headers2.addHeader(headerList[i], randHead);
+                        if (j % 2 == 0) {
+                            randHead = valueList[i] + (new Random().nextInt(RANDOM_SEED));
+                        }
+                        if (headers2.getHeader(headerList[i]) == null) {
+                            headers2.addHeader(headerList[i], randHead);
+                        } else {
+                            headers2.setHeader(headerList[i], randHead);
+                        }
                         msg1.setRequestHeader(headers2);
                         httpSender.sendAndReceive(msg1);
-                        timeList.add(msg1.getTimeElapsedMillis());
+                        System.out.println(
+                                "Threshold decision: \n Headers: "
+                                        + headerList[i]
+                                        + "\n Value: "
+                                        + randHead
+                                        + "\n Time: "
+                                        + msg.getTimeElapsedMillis());
+
+                        if (msg1.getResponseHeader().getStatusCode()
+                                == base.getResponseHeader().getStatusCode()) {
+                            timeList.add(msg1.getTimeElapsedMillis());
+                        }
                     }
-                    if (timeList.get(0) > timeList.get(1)) {
+                    if (timeList.get(0) > timeList.get(1)
+                            && (timeList.get(0) - timeList.get(1)) >= 20) {
                         config.setCacheBustingThreshold(timeList.get(0) - timeList.get(1));
                     }
                 }
 
                 List<Integer> timeList = new ArrayList<Integer>();
                 /* Setting it to a hardcoded value of 4 so as to reduce the time complexity. */
-                for (int j = 0; j < 2; j++) {
-                    String cacheBusterH =
-                            valueList[i] + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
+                String cacheBusterH = "";
+                for (int j = 0; j < 4; j++) {
+                    if (j % 2 == 0) {
+                        cacheBusterH = valueList[i] + (new Random().nextInt(RANDOM_SEED));
+                    }
                     if (headers.getHeader(headerList[i]) == null) {
                         headers.addHeader(headerList[i], cacheBusterH);
+                    } else {
+                        headers.setHeader(headerList[i], cacheBusterH);
                     }
-                    headers.setHeader(headerList[i], cacheBusterH);
                     msg.setRequestHeader(headers);
 
                     httpSender.sendAndReceive(msg);
                     timeList.add(msg.getTimeElapsedMillis());
+                    System.out.println(
+                            "Bruting Headers: \n Headers: "
+                                    + headerList[i]
+                                    + "\n Value: "
+                                    + cacheBusterH
+                                    + "\n Time: "
+                                    + msg.getTimeElapsedMillis());
 
                     if (msg.getResponseHeader().getStatusCode()
                             != base.getResponseHeader().getStatusCode()) {
@@ -603,9 +628,7 @@ public class CacheController {
      */
     private String generateParameterString(String url) {
         return this.createParameterString(
-                url,
-                config.getCacheBusterName(),
-                "" + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE));
+                url, config.getCacheBusterName(), "" + (new Random().nextInt(RANDOM_SEED)));
     }
 
     private String createParameterString(String url, String param, String value) {
@@ -689,24 +712,29 @@ public class CacheController {
             if (config.getCacheBustingThreshold() == -1) {
                 HttpMessage msg1 = new HttpMessage();
                 List<Integer> timeList = new ArrayList<>();
+                String randomBuster = "zap";
+                String randomBusterValue = "" + (new Random(RANDOM_SEED).nextInt(RANDOM_SEED));
                 for (int i = 0; i < 2; i++) {
-                    String randomBuster =
-                            UUID.randomUUID().toString().replace("-", "").substring(0, 4);
-                    String randomBusterValue =
-                            "" + (new Random(RANDOM_SEED).nextInt() & Integer.MAX_VALUE);
                     newUrl = this.createParameterString(url, randomBuster, randomBusterValue);
                     headers.setURI(new URI(newUrl, true));
                     headers.setVersion(HttpHeader.HTTP11);
 
                     msg1.setRequestHeader(headers);
                     httpSender.sendAndReceive(msg1);
-
+                    System.out.println(
+                            "Threshold determination for parameter busting: \nParameter: "
+                                    + randomBuster
+                                    + "\n Value: "
+                                    + randomBusterValue
+                                    + "\n Time: "
+                                    + msg1.getTimeElapsedMillis());
                     if (msg1.getResponseHeader().getStatusCode()
                             == base.getResponseHeader().getStatusCode()) {
                         timeList.add(msg1.getTimeElapsedMillis());
                     }
                 }
-                if (timeList.get(0) > timeList.get(1)) {
+                if (timeList.get(0) > timeList.get(1)
+                        && (timeList.get(0) - timeList.get(1)) >= 20) {
                     config.setCacheBustingThreshold(timeList.get(0) - timeList.get(1));
                 }
             }
@@ -725,6 +753,12 @@ public class CacheController {
 
                 msg.setRequestHeader(headers);
                 httpSender.sendAndReceive(msg);
+                System.out.println(
+                        "Parameter bruting: \n URL:"
+                                + newUrl
+                                + "\n Time: "
+                                + msg.getTimeElapsedMillis());
+
                 times.add(msg.getTimeElapsedMillis());
                 if (msg.getResponseHeader().getStatusCode()
                         != base.getResponseHeader().getStatusCode()) {

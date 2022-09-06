@@ -255,7 +255,7 @@ public class CacheControllerUnitTest extends TestUtils {
     @Test
     void shouldFindCacheWithParameterCacheBusterWhenNoIndicatorPresent()
             throws HttpMalformedHeaderException {
-        String path = "/test";
+        String path = "/testnoindicparam";
         Map<String, String> params = new HashMap<>();
         this.nano.addHandler(
                 new NanoServerHandler(path) {
@@ -276,9 +276,9 @@ public class CacheControllerUnitTest extends TestUtils {
                                     && entry.getValue().get(0) != null
                                     && !params.get(entry.getKey())
                                             .equals(entry.getValue().get(0))) {
+                                params.put(entry.getKey(), entry.getValue().get(0));
                                 try {
                                     Thread.sleep(60);
-                                    params.put(entry.getKey(), entry.getValue().get(0));
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
@@ -319,7 +319,7 @@ public class CacheControllerUnitTest extends TestUtils {
     @Test
     void shouldFindCacheWithHeaderCacheBusterWhenNoIndicatorPresent()
             throws HttpMalformedHeaderException {
-        String path = "/test";
+        String path = "/testnoindicheader";
         Map<String, String> headers = new HashMap<>();
         this.nano.addHandler(
                 new NanoServerHandler(path) {
@@ -341,7 +341,7 @@ public class CacheControllerUnitTest extends TestUtils {
                                     && !headers.get(entry.getKey()).equals(entry.getValue())) {
                                 headers.put(entry.getKey(), entry.getValue());
                                 try {
-                                    Thread.sleep(60);
+                                    Thread.sleep(70);
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
