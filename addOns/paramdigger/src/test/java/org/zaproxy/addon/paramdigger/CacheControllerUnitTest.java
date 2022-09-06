@@ -257,7 +257,6 @@ public class CacheControllerUnitTest extends TestUtils {
             throws HttpMalformedHeaderException {
         String path = "/testnoindicparam";
         Map<String, String> params = new HashMap<>();
-        System.out.println("\n\n[***] Parameter Cache buster test with timing index: \n\n");
         this.nano.addHandler(
                 new NanoServerHandler(path) {
                     @Override
@@ -267,7 +266,7 @@ public class CacheControllerUnitTest extends TestUtils {
                             if (!params.containsKey(entry.getKey())) {
                                 params.put(entry.getKey(), entry.getValue().get(0));
                                 try {
-                                    Thread.sleep(60);
+                                    Thread.sleep(70);
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
@@ -303,7 +302,7 @@ public class CacheControllerUnitTest extends TestUtils {
         assertThat(cacheController.isCached(Method.GET), equalTo(true));
         assertThat(cacheController.getCache().hasTimeIndicator(), equalTo(true));
         assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
-        assertThat(cacheController.getCache().isCacheBusterIsParameter(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterIsHeader(), equalTo(true));
     }
 
     @Test
@@ -311,7 +310,6 @@ public class CacheControllerUnitTest extends TestUtils {
             throws HttpMalformedHeaderException {
         String path = "/testnoindicheader";
         Map<String, String> headers = new HashMap<>();
-        System.out.println("\n\n [***] Header Cache buster test with timing index: \n\n");
         this.nano.addHandler(
                 new NanoServerHandler(path) {
                     @Override
@@ -357,6 +355,6 @@ public class CacheControllerUnitTest extends TestUtils {
         assertThat(cacheController.isCached(Method.GET), equalTo(true));
         assertThat(cacheController.getCache().hasTimeIndicator(), equalTo(true));
         assertThat(cacheController.getCache().isCacheBusterFound(), equalTo(true));
-        assertThat(cacheController.getCache().isCacheBusterIsHeader(), equalTo(true));
+        assertThat(cacheController.getCache().isCacheBusterIsParameter(), equalTo(true));
     }
 }

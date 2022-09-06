@@ -142,21 +142,25 @@ public class CacheController {
             if (!alwaysMiss) {
                 /* Check if a query parameter can be used a cache buster. */
                 if (!cache.isCacheBusterFound()) {
+                    config.setCacheBustingThreshold(-1);
                     this.cacheBusterParameter(url, method, cache);
                 }
 
                 /* Check if a header can be used as a cache buster. */
                 if (!cache.isCacheBusterFound()) {
+                    config.setCacheBustingThreshold(-1);
                     this.cacheBusterHeader(url, method, cache);
                 }
 
                 /* Check if a  cookmie can be used as a cache buster. */
                 if (!cache.isCacheBusterFound()) {
+                    config.setCacheBustingThreshold(-1);
                     this.cacheBusterCookie(url, method, cache);
                 }
 
                 /* Check if a HTTP method can be used as a cache buster. */
                 if (!cache.isCacheBusterFound()) {
+                    config.setCacheBustingThreshold(-1);
                     this.cacheBusterHttpMethod(url, method, cache);
                 }
             }
@@ -240,7 +244,17 @@ public class CacheController {
                         if (j % 2 == 0) {
                             headers2.setMethod(httpMethods[i]);
                         } else {
-                            headers2.setMethod(method.toString());
+                            switch (method) {
+                                case GET:
+                                    headers2.setMethod(HttpRequestHeader.GET);
+                                    break;
+                                case POST:
+                                    headers2.setMethod(HttpRequestHeader.POST);
+                                    break;
+                                default:
+                                    throw new IllegalArgumentException(
+                                            Constant.messages.getString(METHOD_NOT_SUPPORTED, method));
+                            }
                         }
                         HttpMessage msg = new HttpMessage();
                         msg.setRequestHeader(headers2);
@@ -688,7 +702,6 @@ public class CacheController {
             }
         } else {
             /* This means we don't have any indicator and time is our only friend. */
-
             /* First we send two requests with a random cachebuster to determine
             the threshold value if we have opted in for default mode. */
 
