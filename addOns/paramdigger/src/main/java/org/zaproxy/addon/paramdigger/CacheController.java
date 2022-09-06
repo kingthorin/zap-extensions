@@ -253,7 +253,8 @@ public class CacheController {
                                     break;
                                 default:
                                     throw new IllegalArgumentException(
-                                            Constant.messages.getString(METHOD_NOT_SUPPORTED, method));
+                                            Constant.messages.getString(
+                                                    METHOD_NOT_SUPPORTED, method));
                             }
                         }
                         HttpMessage msg = new HttpMessage();

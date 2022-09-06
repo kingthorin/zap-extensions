@@ -328,7 +328,7 @@ public class CacheControllerUnitTest extends TestUtils {
                                     && !headers.get(entry.getKey()).equals(entry.getValue())) {
                                 headers.put(entry.getKey(), entry.getValue());
                                 try {
-                                    Thread.sleep(70);
+                                    Thread.sleep(60);
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
