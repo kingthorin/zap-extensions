@@ -4,6 +4,8 @@ All notable changes to this add-on will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
+### Fixed
+- False positive in case of javascript: protocol xss attacks, when attack payload is modified by the application (Issue 6013).
 ### Changed
 - The Directory Browsing scan rule now includes example alert functionality for documentation generation purposes (Issue 6119).
 - Use lower case HTTP field names for compatibility with HTTP/2.

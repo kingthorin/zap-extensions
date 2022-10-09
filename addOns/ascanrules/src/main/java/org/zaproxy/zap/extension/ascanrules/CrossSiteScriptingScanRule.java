@@ -228,6 +228,23 @@ public class CrossSiteScriptingScanRule extends AbstractAppParamPlugin {
             attack = attack.replaceFirst(NULL_BYTE_CHARACTER, "");
             evidence = attack;
         }
+        if (targetContext != null
+                && targetContext.getTagAttribute() != null
+                && targetContext.isInUrlAttribute()) {
+            // No payload modifications should be made in case of "javascript:" protocol attacks
+            String attAndPayload =
+                    targetContext.getTagAttribute()
+                            + "="
+                            + targetContext.getSurroundingQuote()
+                            + attack
+                            + targetContext.getSurroundingQuote();
+            HtmlContextAnalyser urlAttHca = new HtmlContextAnalyser(msg2);
+            List<HtmlContext> contextsWithNoPayloadModifications =
+                    urlAttHca.getHtmlContexts(attAndPayload, null, 0);
+            if (contextsWithNoPayloadModifications.isEmpty()) {
+                return null;
+            }
+        }
         HtmlContextAnalyser hca = new HtmlContextAnalyser(msg2);
         if (Plugin.AlertThreshold.HIGH.equals(this.getAlertThreshold())) {
             // High level, so check all results are in the expected context
