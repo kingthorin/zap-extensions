@@ -228,23 +228,6 @@ public class CrossSiteScriptingScanRule extends AbstractAppParamPlugin {
             attack = attack.replaceFirst(NULL_BYTE_CHARACTER, "");
             evidence = attack;
         }
-        if (targetContext != null
-                && targetContext.getTagAttribute() != null
-                && targetContext.isInUrlAttribute()) {
-            // No payload modifications should be made in case of "javascript:" protocol attacks
-            String attAndPayload =
-                    targetContext.getTagAttribute()
-                            + "="
-                            + targetContext.getSurroundingQuote()
-                            + attack
-                            + targetContext.getSurroundingQuote();
-            HtmlContextAnalyser urlAttHca = new HtmlContextAnalyser(msg2);
-            List<HtmlContext> contextsWithNoPayloadModifications =
-                    urlAttHca.getHtmlContexts(attAndPayload, null, 0);
-            if (contextsWithNoPayloadModifications.isEmpty()) {
-                return null;
-            }
-        }
         HtmlContextAnalyser hca = new HtmlContextAnalyser(msg2);
         if (Plugin.AlertThreshold.HIGH.equals(this.getAlertThreshold())) {
             // High level, so check all results are in the expected context
@@ -327,6 +310,22 @@ public class CrossSiteScriptingScanRule extends AbstractAppParamPlugin {
 
             for (HtmlContext ctx : contexts2) {
                 if (ctx.isInUrlAttribute()) {
+
+                    // No payload modifications should be made in case of "javascript:" protocol
+                    // attacks
+                    String attAndPayload =
+                            ctx.getTagAttribute()
+                                    + "="
+                                    + ctx.getSurroundingQuote()
+                                    + ctx.getTarget()
+                                    + ctx.getSurroundingQuote();
+                    HtmlContextAnalyser urlAttHca = new HtmlContextAnalyser(ctx.getMsg());
+                    List<HtmlContext> contextsWithNoPayloadModifications =
+                            urlAttHca.getHtmlContexts(attAndPayload, null, 0);
+                    if (contextsWithNoPayloadModifications.isEmpty()) {
+                        return false;
+                    }
+
                     // Yep, its vulnerable
                     newAlert()
                             .setConfidence(Alert.CONFIDENCE_MEDIUM)

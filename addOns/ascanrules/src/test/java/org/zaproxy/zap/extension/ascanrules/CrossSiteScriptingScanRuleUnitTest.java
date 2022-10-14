@@ -975,7 +975,10 @@ class CrossSiteScriptingScanRuleUnitTest extends ActiveScannerTest<CrossSiteScri
                         String response;
                         if (name != null) {
                             // Strip out < and >
-                            name = name.replaceAll("<", "").replaceAll(">", "");
+                            name =
+                                    name.replaceAll("<", "")
+                                            .replaceAll(">", "")
+                                            .replaceAll("\"", "");
                             response =
                                     getHtml(
                                             "InputInLinkHrefTag.html",
