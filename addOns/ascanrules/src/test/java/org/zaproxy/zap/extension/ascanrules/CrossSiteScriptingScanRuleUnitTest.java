@@ -963,9 +963,9 @@ class CrossSiteScriptingScanRuleUnitTest extends ActiveScannerTest<CrossSiteScri
     }
 
     @Test
-    void shouldNotReportXssInUrlAttributeWhenPayloadIsModified()
+    void shouldReportXssInUrlAttributeButNotWhenPayloadIsModified()
             throws NullPointerException, IOException {
-        String test = "/shouldNotReportXssInUrlAttributeWhenPayloadIsModified/";
+        String test = "/shouldReportXssInUrlAttributeButNotWhenPayloadIsModified/";
 
         this.nano.addHandler(
                 new NanoServerHandler(test) {
@@ -981,7 +981,7 @@ class CrossSiteScriptingScanRuleUnitTest extends ActiveScannerTest<CrossSiteScri
                                             .replaceAll("\"", "");
                             response =
                                     getHtml(
-                                            "InputInLinkHrefTag.html",
+                                            "InputInLinkHrefTagAndFrameSrcTag.html",
                                             new String[][] {{"name", name}});
                         } else {
                             response = getHtml("NoInput.html");
@@ -996,7 +996,12 @@ class CrossSiteScriptingScanRuleUnitTest extends ActiveScannerTest<CrossSiteScri
 
         this.rule.scan();
 
-        assertThat(alertsRaised.size(), equalTo(0));
+        assertThat(alertsRaised.size(), equalTo(1));
+        assertThat(alertsRaised.get(0).getEvidence(), equalTo("javascript:alert(1);"));
+        assertThat(alertsRaised.get(0).getParam(), equalTo("name"));
+        assertThat(alertsRaised.get(0).getAttack(), equalTo("javascript:alert(1);"));
+        assertThat(alertsRaised.get(0).getRisk(), equalTo(Alert.RISK_HIGH));
+        assertThat(alertsRaised.get(0).getConfidence(), equalTo(Alert.CONFIDENCE_MEDIUM));
     }
 
     @Test
