@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 - Update minimum ZAP version to 2.14.0.
 
+### Added
+- Full Path Disclosure vulnerability passive scanner (Issue 413).
+
 ## [41] - 2023-09-08
 ### Changed
 - Maintenance changes.
