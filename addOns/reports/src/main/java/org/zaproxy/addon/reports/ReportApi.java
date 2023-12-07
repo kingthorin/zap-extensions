@@ -19,7 +19,12 @@
  */
 package org.zaproxy.addon.reports;
 
+import java.io.File;
+import java.net.URI;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,6 +36,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
+
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.text.WordUtils;
 import org.apache.logging.log4j.LogManager;
@@ -76,6 +83,7 @@ public class ReportApi extends ApiImplementor {
     static final String PARAM_INC_CONFIDENCES = "includedConfidences";
     static final String PARAM_INC_RISKS = "includedRisks";
     static final String PARAM_REPORT_FILE_NAME_PATTERN = "reportFileNamePattern";
+    static final String PARAM_ZIP = "zip";
 
     private final ExtensionReports extReports;
 
@@ -251,12 +259,21 @@ public class ReportApi extends ApiImplementor {
                 if (!reportFileName.endsWith(template.getExtension())) {
                     reportFileName += '.' + template.getExtension();
                 }
+                String bareName = StringUtils.removeEnd(reportFileName, '.' + template.getExtension());
+                boolean shouldZip = params.optBoolean(PARAM_ZIP, false);
+                if (shouldZip) {
+                    URI uri = URI.create("jar:" + Paths.get(paramReportDir, bareName + ',' + "zip").toUri());
+                    try (FileSystem fs = FileSystems.newFileSystem(uri, Map.of("create", "true"))) {
+                        Path nf = fs.getPath(reportFileName);
+                        Files.write(nf, Files.readAllBytes(Paths.get(file3)), StandardOpenOption.CREATE);
+                    }
+                }
                 String reportFilePath = Paths.get(paramReportDir, reportFileName).toString();
 
                 boolean display = params.optBoolean(PARAM_DISPLAY, false);
 
                 try {
-                    extReports.generateReport(reportData, template, reportFilePath, display);
+                    File file = extReports.generateReport(reportData, template, reportFilePath, display);
                 } catch (Exception e) {
                     throw new ApiException(Type.INTERNAL_ERROR, e);
                 }
