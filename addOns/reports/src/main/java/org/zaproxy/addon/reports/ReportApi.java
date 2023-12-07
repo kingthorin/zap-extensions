@@ -19,8 +19,16 @@
  */
 package org.zaproxy.addon.reports;
 
+import java.io.File;
+import java.net.URI;
+import java.nio.file.CopyOption;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -31,6 +39,9 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.text.WordUtils;
 import org.apache.logging.log4j.LogManager;
@@ -76,6 +87,7 @@ public class ReportApi extends ApiImplementor {
     static final String PARAM_INC_CONFIDENCES = "includedConfidences";
     static final String PARAM_INC_RISKS = "includedRisks";
     static final String PARAM_REPORT_FILE_NAME_PATTERN = "reportFileNamePattern";
+    static final String PARAM_ZIP = "zip";
 
     private final ExtensionReports extReports;
 
@@ -106,6 +118,7 @@ public class ReportApi extends ApiImplementor {
                             PARAM_REPORT_FILE_NAME_PATTERN,
                             PARAM_REPORT_DIRECTORY,
                             PARAM_DISPLAY,
+                            PARAM_ZIP,
                         }));
         this.addApiView(new ApiView(VIEW_TEMPLATES));
         this.addApiView(new ApiView(VIEW_TEMPLATE_DETAILS, new String[] {PARAM_TEMPLATE}));
@@ -256,7 +269,25 @@ public class ReportApi extends ApiImplementor {
                 boolean display = params.optBoolean(PARAM_DISPLAY, false);
 
                 try {
-                    extReports.generateReport(reportData, template, reportFilePath, display);
+                    File file = extReports.generateReport(reportData, template, reportFilePath, display);
+                    String bareName = StringUtils.removeEnd(reportFileName, '.' + template.getExtension());
+                    boolean shouldZip = params.optBoolean(PARAM_ZIP, false);
+                    if (shouldZip) {
+                        URI uri = URI.create("jar:" + Paths.get(paramReportDir, bareName + ".zip").toUri());
+                        try (FileSystem fs = FileSystems.newFileSystem(uri, Map.of("create", "true"))) {
+                            Path nf = fs.getPath(reportFileName);
+                            Files.write(nf, Files.readAllBytes(Paths.get(file.toURI())), StandardOpenOption.CREATE);
+//                            Files.copy(new File(paramReportDir + FileSystems.getDefault().getSeparator() + bareName).toPath(), nf.toAbsolutePath(), StandardCopyOption.COPY_ATTRIBUTES);
+//                            URI destDir = URI.create("jar:" + Paths.get(paramReportDir, bareName + ".zip" +FileSystems.getDefault().getSeparator() + bareName).toUri());
+                            System.out.println(paramReportDir + FileSystems.getDefault().getSeparator() + bareName + FileSystems.getDefault().getSeparator());
+                            System.out.println(fs.getPath(bareName).toAbsolutePath());
+                            System.out.println(nf.toAbsolutePath());
+                            URI srcDir = URI.create(paramReportDir + FileSystems.getDefault().getSeparator() + bareName);
+//                            System.out.println(destDir);
+                            System.out.println(srcDir.toASCIIString());
+                            FileUtils.copyDirectory(new File(srcDir), new File(fs.getPath(bareName).toUri()));
+                        }
+                    }
                 } catch (Exception e) {
                     throw new ApiException(Type.INTERNAL_ERROR, e);
                 }
