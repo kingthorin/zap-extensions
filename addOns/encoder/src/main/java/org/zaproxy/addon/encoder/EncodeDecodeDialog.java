@@ -363,7 +363,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             JPanel parentPanel = (JPanel) component;
             TabModel foundTab = getTabByIndex(tabIndex);
             foundTab.getOutputPanels().add(outputPanelModel);
-            ZapTextArea outputField = newField(false);
+            ZapTextAreaPanel outputField = newField(false);
             addField(parentPanel, outputField, createOutputPanelTitle(outputPanelModel));
             updateEncodeDecodeField(outputField, outputPanelModel);
         }
@@ -533,8 +533,8 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         return mainPanel;
     }
 
-    private ZapTextArea newField(boolean editable) {
-        final ZapTextArea field = new ZapTextArea();
+    private ZapTextAreaPanel newField(boolean editable) {
+        final ZapTextAreaPanel field = new ZapTextAreaPanel();
         field.setLineWrap(true);
         field.setBorder(BorderFactory.createEtchedBorder());
         field.setEditable(editable);
@@ -555,9 +555,31 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         return field;
     }
 
+    private ZapTextArea newInputField() {
+        final ZapTextArea field = new ZapTextArea();
+        field.setLineWrap(true);
+        field.setBorder(BorderFactory.createEtchedBorder());
+        field.setEditable(true);
+        field.setName(ENCODE_DECODE_RESULTFIELD);
+
+        field.addMouseListener(
+                new MouseAdapter() {
+                    @Override
+                    public void mousePressed(MouseEvent e) {
+                        if (SwingUtilities.isRightMouseButton(e)) {
+                            View.getSingleton()
+                                    .getPopupMenu()
+                                    .show(e.getComponent(), e.getX(), e.getY());
+                        }
+                    }
+                });
+
+        return field;
+    }
+
     private ZapTextArea getInputField() {
         if (inputField == null) {
-            inputField = newField(true);
+            inputField = newInputField();
             inputField.setName(ENCODE_DECODE_FIELD);
 
             inputField
@@ -600,7 +622,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         this.updateEncodeDecodeFields();
     }
 
-    private ZapTextArea findZapTextArea(OutputPanelPosition position) {
+    private ZapTextAreaPanel findZapTextArea(OutputPanelPosition position) {
         Component currentTab = getMainTabbedPane().getComponentAt(position.getTabIndex());
         if (currentTab instanceof JPanel) {
             JPanel tabPanel = (JPanel) currentTab;
@@ -609,7 +631,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
                 JScrollPane scrollPane = (JScrollPane) component;
                 Component view = scrollPane.getViewport().getView();
                 if (view instanceof ZapTextArea) {
-                    return (ZapTextArea) view;
+                    return (ZapTextAreaPanel) view;
                 }
             }
         }
@@ -619,7 +641,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
     private void updateEncodeDecodeFields() {
         for (TabModel tab : tabs) {
             for (OutputPanelModel outputPanel : tab.getOutputPanels()) {
-                ZapTextArea zapTextArea =
+                ZapTextAreaPanel zapTextArea =
                         findZapTextArea(
                                 new OutputPanelPosition(getIndex(tab), getIndex(tab, outputPanel)));
                 if (zapTextArea != null) {
@@ -629,7 +651,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         }
     }
 
-    private boolean updateEncodeDecodeField(ZapTextArea zapTextArea, OutputPanelModel outputPanel) {
+    private boolean updateEncodeDecodeField(ZapTextAreaPanel zapTextArea, OutputPanelModel outputPanel) {
         EncodeDecodeResult result;
         try {
             result =
