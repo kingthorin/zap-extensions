@@ -27,7 +27,7 @@ import org.parosproxy.paros.extension.ExtensionPopupMenuItem;
 public class PopupEncoderDeleteOutputPanelMenu extends ExtensionPopupMenuItem {
 
     private static final long serialVersionUID = 1L;
-    private JTextComponent lastInvoker = null;
+    private Component lastInvoker = null;
 
     public PopupEncoderDeleteOutputPanelMenu() {
         super(Constant.messages.getString("encoder.popup.delete"));
@@ -36,14 +36,14 @@ public class PopupEncoderDeleteOutputPanelMenu extends ExtensionPopupMenuItem {
     /**
      * @return Returns the lastInvoker.
      */
-    public JTextComponent getLastInvoker() {
+    public Component getLastInvoker() {
         return lastInvoker;
     }
 
     /**
      * @param lastInvoker The lastInvoker to set.
      */
-    public void setLastInvoker(JTextComponent lastInvoker) {
+    public void setLastInvoker(Component lastInvoker) {
         this.lastInvoker = lastInvoker;
     }
 
@@ -51,7 +51,7 @@ public class PopupEncoderDeleteOutputPanelMenu extends ExtensionPopupMenuItem {
     public boolean isEnableForComponent(Component invoker) {
         if (invoker instanceof JTextComponent && isInvokerFromEncodeDecode(invoker)) {
             setEnabled(true);
-            setLastInvoker((JTextComponent) invoker);
+            setLastInvoker(invoker);
             return true;
         }
 
@@ -59,10 +59,11 @@ public class PopupEncoderDeleteOutputPanelMenu extends ExtensionPopupMenuItem {
         return false;
     }
 
-    private boolean isInvokerFromEncodeDecode(Component invoker) {
+    private static boolean isInvokerFromEncodeDecode(Component invoker) {
         if (invoker.getName() == null) {
             return false;
         }
-        return invoker.getName().equals(EncodeDecodeDialog.ENCODE_DECODE_RESULTFIELD);
+
+        return ZapTextAreaPanel.ENCODER_COMP.equals(invoker.getName());
     }
 }

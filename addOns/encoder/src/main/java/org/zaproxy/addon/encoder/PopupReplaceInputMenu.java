@@ -56,6 +56,6 @@ public class PopupReplaceInputMenu extends ExtensionPopupMenuItem {
     }
 
     private static boolean isInvokerRelevant(Component invoker) {
-        return EncodeDecodeDialog.ENCODE_DECODE_RESULTFIELD.equals(invoker.getName());
+        return EncodeDecodeDialog.ENCODE_DECODE_RESULTFIELD.equals(invoker.getParent().getName());
     }
 }

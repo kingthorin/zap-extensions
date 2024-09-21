@@ -64,13 +64,14 @@ public class PopupEncoderMenu extends ExtensionPopupMenuItem {
         return false;
     }
 
-    private boolean isInvokerFromEncodeDecode(Component invoker) {
+    private static boolean isInvokerFromEncodeDecode(Component invoker) {
         if (invoker.getName() == null) {
             return false;
         }
 
         return invoker.getName().equals(EncodeDecodeDialog.ENCODE_DECODE_FIELD)
-                || invoker.getName().equals(EncodeDecodeDialog.ENCODE_DECODE_RESULTFIELD);
+                || invoker.getName().equals(EncodeDecodeDialog.ENCODE_DECODE_RESULTFIELD)
+                || ZapTextAreaPanel.ENCODER_COMP.equals(invoker.getName());
     }
 
     @Override

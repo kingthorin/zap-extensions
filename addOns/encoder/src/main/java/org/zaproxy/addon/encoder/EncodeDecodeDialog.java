@@ -47,7 +47,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.border.TitledBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.text.JTextComponent;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -309,7 +308,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         }
     }
 
-    private String createTabTitle(TabModel tabModel) {
+    private static String createTabTitle(TabModel tabModel) {
         if (tabModel.getName().startsWith(EncodeDecodeProcessors.PREDEFINED_PREFIX)) {
             return Constant.messages.getString(tabModel.getName());
         }
@@ -363,13 +362,13 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             JPanel parentPanel = (JPanel) component;
             TabModel foundTab = getTabByIndex(tabIndex);
             foundTab.getOutputPanels().add(outputPanelModel);
-            ZapTextArea outputField = newField(false);
+            ZapTextAreaPanel outputField = newField(false);
             addField(parentPanel, outputField, createOutputPanelTitle(outputPanelModel));
             updateEncodeDecodeField(outputField, outputPanelModel);
         }
     }
 
-    private String createOutputPanelTitle(OutputPanelModel outputPanelModel) {
+    private static String createOutputPanelTitle(OutputPanelModel outputPanelModel) {
         String processorId = outputPanelModel.getProcessorId();
         if (processorId.startsWith(EncodeDecodeProcessors.PREDEFINED_PREFIX)) {
             processorId = Constant.messages.getString(processorId);
@@ -382,11 +381,11 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         return outputPanelModel.getName() + " (" + processorId + ")";
     }
 
-    private int getIndex(TabModel tabModel, OutputPanelModel outputPanelModel) {
+    private static int getIndex(TabModel tabModel, OutputPanelModel outputPanelModel) {
         return tabModel.getOutputPanels().indexOf(outputPanelModel);
     }
 
-    public void deleteOutputPanel(JTextComponent toDelete) {
+    public void deleteOutputPanel(Component toDelete) {
         OutputPanelPosition outputPanelPos = findOutputPanel(toDelete);
         if (outputPanelPos == null) {
             LOGGER.warn("component for delete not found");
@@ -404,7 +403,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         }
     }
 
-    private OutputPanelPosition findOutputPanel(JTextComponent searched) {
+    private OutputPanelPosition findOutputPanel(Component searched) {
         for (int i = 0; i < getMainTabbedPane().getTabCount(); i++) {
             Component tab = getMainTabbedPane().getComponentAt(i);
             if (tab instanceof JPanel) {
@@ -533,12 +532,22 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         return mainPanel;
     }
 
-    private ZapTextArea newField(boolean editable) {
-        final ZapTextArea field = new ZapTextArea();
+    private static ZapTextAreaPanel newField(boolean editable) {
+        final ZapTextAreaPanel field = new ZapTextAreaPanel();
         field.setLineWrap(true);
         field.setBorder(BorderFactory.createEtchedBorder());
         field.setEditable(editable);
         field.setName(ENCODE_DECODE_RESULTFIELD);
+
+        return field;
+    }
+
+    private static ZapTextArea newInputField() {
+        final ZapTextArea field = new ZapTextArea();
+        field.setLineWrap(true);
+        field.setBorder(BorderFactory.createEtchedBorder());
+        field.setEditable(true);
+        field.setName(ENCODE_DECODE_FIELD);
 
         field.addMouseListener(
                 new MouseAdapter() {
@@ -557,8 +566,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
 
     private ZapTextArea getInputField() {
         if (inputField == null) {
-            inputField = newField(true);
-            inputField.setName(ENCODE_DECODE_FIELD);
+            inputField = newInputField();
 
             inputField
                     .getDocument()
@@ -576,7 +584,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
 
                                 @Override
                                 public void changedUpdate(DocumentEvent documentEvent) {
-                                    // Nothing to do
+                                    updateEncodeDecodeFields();
                                 }
                             });
 
@@ -600,7 +608,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         this.updateEncodeDecodeFields();
     }
 
-    private ZapTextArea findZapTextArea(OutputPanelPosition position) {
+    private ZapTextAreaPanel findZapTextArea(OutputPanelPosition position) {
         Component currentTab = getMainTabbedPane().getComponentAt(position.getTabIndex());
         if (currentTab instanceof JPanel) {
             JPanel tabPanel = (JPanel) currentTab;
@@ -608,8 +616,8 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             if (component instanceof JScrollPane) {
                 JScrollPane scrollPane = (JScrollPane) component;
                 Component view = scrollPane.getViewport().getView();
-                if (view instanceof ZapTextArea) {
-                    return (ZapTextArea) view;
+                if (view instanceof ZapTextAreaPanel) {
+                    return (ZapTextAreaPanel) view;
                 }
             }
         }
@@ -619,7 +627,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
     private void updateEncodeDecodeFields() {
         for (TabModel tab : tabs) {
             for (OutputPanelModel outputPanel : tab.getOutputPanels()) {
-                ZapTextArea zapTextArea =
+                ZapTextAreaPanel zapTextArea =
                         findZapTextArea(
                                 new OutputPanelPosition(getIndex(tab), getIndex(tab, outputPanel)));
                 if (zapTextArea != null) {
@@ -629,7 +637,8 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         }
     }
 
-    private boolean updateEncodeDecodeField(ZapTextArea zapTextArea, OutputPanelModel outputPanel) {
+    private boolean updateEncodeDecodeField(
+            ZapTextAreaPanel zapTextArea, OutputPanelModel outputPanel) {
         EncodeDecodeResult result;
         try {
             result =
