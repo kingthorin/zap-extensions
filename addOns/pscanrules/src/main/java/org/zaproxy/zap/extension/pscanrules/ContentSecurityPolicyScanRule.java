@@ -20,7 +20,6 @@
 package org.zaproxy.zap.extension.pscanrules;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -73,7 +72,7 @@ public class ContentSecurityPolicyScanRule extends PluginPassiveScanner
     // Per:
     // https://developers.google.com/web/fundamentals/security/csp#policy_applies_to_a_wide_variety_of_resources as of 20200618
     private static final List<String> DIRECTIVES_WITHOUT_FALLBACK =
-            Arrays.asList(
+            List.of(
                     "base-uri",
                     "form-action",
                     "frame-ancestors",
@@ -81,7 +80,7 @@ public class ContentSecurityPolicyScanRule extends PluginPassiveScanner
                     "report-uri",
                     "sandbox");
     private static final List<String> ALLOWED_DIRECTIVES =
-            Arrays.asList(
+            List.of(
                     // TODO: Remove once https://github.com/shapesecurity/salvation/issues/232 is
                     // addressed
                     "require-trusted-types-for", "trusted-types");
@@ -138,10 +137,12 @@ public class ContentSecurityPolicyScanRule extends PluginPassiveScanner
                     checkObservedErrors(observedErrors, msg, csp, false);
                 }
 
-                List<String> allowedWildcardSources = getAllowedWildcardSources(csp);
-                if (!allowedWildcardSources.isEmpty()) {
-                    checkWildcardSources(allowedWildcardSources, msg, csp, false);
-                }
+                List<String> absentWithoutFallback = new ArrayList<>();
+                List<String> allowedWildcardSources = getAllowedWildcardSources(csp, absentWithoutFallback);
+                System.out.println(allowedWildcardSources);
+                System.out.println(absentWithoutFallback);
+                checkWildcardSources(allowedWildcardSources, msg, csp, false);
+                checkAbsentWithoutFallback(absentWithoutFallback, msg, csp, false);
 
                 PolicyInOrigin p = new PolicyInOrigin(policy, URI.parseURI(RAND_FQDN).orElse(null));
                 if (p.allowsUnsafeInlineScript()) {
@@ -218,10 +219,12 @@ public class ContentSecurityPolicyScanRule extends PluginPassiveScanner
                     continue;
                 }
                 checkObservedErrors(metaObservedErrors, msg, metaPolicy, true);
-                List<String> metaWildcardSources = getAllowedWildcardSources(metaPolicy);
+                List<String> absentWithoutFallback = new ArrayList<>();
+                List<String> metaWildcardSources = getAllowedWildcardSources(metaPolicy, absentWithoutFallback);
                 // frame-ancestors isn't applicable in META
                 metaWildcardSources.remove("frame-ancestors");
                 checkWildcardSources(metaWildcardSources, msg, metaPolicy, true);
+                checkAbsentWithoutFallback(absentWithoutFallback, msg, metaPolicy, true);
                 PolicyInOrigin pol =
                         new PolicyInOrigin(parsedMetaPolicy, URI.parseURI(RAND_FQDN).orElse(null));
                 if (pol.allowsUnsafeInlineScript()) {
@@ -358,6 +361,23 @@ public class ContentSecurityPolicyScanRule extends PluginPassiveScanner
                 .raise();
     }
 
+    private void checkAbsentWithoutFallback(
+            List<String> absentWithoutFallback, HttpMessage msg, String csp, boolean isMeta) {
+        if (absentWithoutFallback.isEmpty()) {
+            return;
+        }
+        buildAbsentWithoutFallbackAlert(
+                        isMeta
+                                ? HttpFieldsNames.CONTENT_SECURITY_POLICY
+                                : getHeaderField(msg, HttpFieldsNames.CONTENT_SECURITY_POLICY)
+                                        .get(0),
+                        csp,
+                        Constant.messages.getString(
+                                "pscanrules.csp.otherinfo.extended",
+                                String.join(", ", absentWithoutFallback)))
+                .raise();
+    }
+
     private static boolean allowsUnsafeHashes(Policy policy, FetchDirectiveKind source) {
         Optional<SourceExpressionDirective> fetchDirective = policy.getFetchDirective(source);
         if (fetchDirective.isPresent()) {
@@ -446,7 +466,13 @@ public class ContentSecurityPolicyScanRule extends PluginPassiveScanner
         return matchedHeaders;
     }
 
-    private static List<String> getAllowedWildcardSources(String policyText) {
+    private static List<String> getAllowedWildcardSources(String policyText, List<String> absentWithoutFallback) {
+
+        DIRECTIVES_WITHOUT_FALLBACK.forEach(directive -> {
+            if (!StringUtils.containsIgnoreCase(policyText, directive)) {
+                absentWithoutFallback.add(directive);
+            }
+        });
 
         List<String> allowedSources = new ArrayList<>();
         Policy pol = Policy.parseSerializedCSP(policyText, PolicyErrorConsumer.ignored);
@@ -466,7 +492,8 @@ public class ContentSecurityPolicyScanRule extends PluginPassiveScanner
         if (checkPolicy(pol::allowsFrame)) {
             allowedSources.add("frame-src");
         }
-        if (checkPolicy(pol::allowsFrameAncestor)) {
+        if (checkPolicy(pol::allowsFrameAncestor)
+                && !absentWithoutFallback.contains("frame-ancestors")) {
             allowedSources.add("frame-ancestors");
         }
         if (checkPolicy(pol::allowsFont)) {
@@ -484,10 +511,11 @@ public class ContentSecurityPolicyScanRule extends PluginPassiveScanner
         if (checkPolicy(pol::allowsWorker)) {
             allowedSources.add("worker-src");
         }
-        if (checkPolicy(pol::allowsFormAction)) {
+        if (checkPolicy(pol::allowsFormAction) && !absentWithoutFallback.contains("form-action")) {
             allowedSources.add("form-action");
         }
 
+        allowedSources.removeAll(absentWithoutFallback);
         return allowedSources;
     }
 
@@ -688,6 +716,14 @@ public class ContentSecurityPolicyScanRule extends PluginPassiveScanner
         return getBuilder(Constant.messages.getString(MESSAGE_PREFIX + "both.name"), "12")
                 .setRisk(Alert.RISK_INFO)
                 .setDescription(Constant.messages.getString(MESSAGE_PREFIX + "both.desc"));
+    }
+
+    private AlertBuilder buildAbsentWithoutFallbackAlert(String param, String evidence, String otherinfo) {
+        return getBuilder(Constant.messages.getString(MESSAGE_PREFIX + "nofallback.name"), "13")
+                .setRisk(Alert.RISK_MEDIUM)
+                .setParam(param)
+                .setEvidence(evidence)
+                .setOtherInfo(otherinfo);
     }
 
     @Override

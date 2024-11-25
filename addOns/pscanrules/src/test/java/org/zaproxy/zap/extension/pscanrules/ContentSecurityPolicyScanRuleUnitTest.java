@@ -439,12 +439,12 @@ class ContentSecurityPolicyScanRuleUnitTest
         assertThat(alertsRaised.size(), equalTo(2));
         assertThat(alertsRaised.get(0).getName(), equalTo("CSP: Notices"));
         Alert alert = alertsRaised.get(1);
-        assertThat(alert.getName(), equalTo("CSP: Wildcard Directive"));
+        assertThat(alert.getName(), equalTo("CSP: Failure to Define Directive with No Fallback"));
+        // Does wildcad still need extended other info?
         assertThat(
                 alert.getOtherInfo(),
                 equalTo(
-                        "The following directives either allow wildcard sources (or ancestors), are not defined, or are overly broadly defined:\n"
-                                + "form-action\n\nThe directive(s): form-action are among the directives that do not fallback to default-src, missing/excluding them is the same as allowing anything."));
+                        "The directive(s): base-uri, form-action, frame-ancestos, plugin-types, report-uri, sandbox are among the directives that do not fallback to default-src, missing/excluding them is the same as allowing anything."));
         assertThat(alert.getEvidence(), equalTo(policy));
         assertThat(alert.getRisk(), equalTo(Alert.RISK_MEDIUM));
         assertThat(alert.getConfidence(), equalTo(Alert.CONFIDENCE_HIGH));
@@ -550,15 +550,17 @@ class ContentSecurityPolicyScanRuleUnitTest
         HttpMessage msg =
                 createHttpMessageWithReasonableCsp(HttpFieldsNames.CONTENT_SECURITY_POLICY);
         msg.getResponseHeader()
-                .addHeader(HttpFieldsNames.CONTENT_SECURITY_POLICY, "default-src 'unsafe-inline'");
+                .setHeader(HttpFieldsNames.CONTENT_SECURITY_POLICY, "default-src 'unsafe-inline'");
         // When
         scanHttpResponseReceive(msg);
         // Then
         assertThat(alertsRaised.size(), equalTo(3));
         // Verify the specific alerts
-        assertThat(alertsRaised.get(0).getName(), equalTo("CSP: Wildcard Directive"));
+        assertThat(alertsRaised.get(0).getName(), equalTo("CSP: Failure to Define Directive with No Fallback"));
+        assertThat(alertsRaised.get(0).getRisk(), equalTo(Alert.RISK_MEDIUM));
+        assertThat(alertsRaised.get(0).getConfidence(), equalTo(Alert.CONFIDENCE_HIGH));
         assertThat(alertsRaised.get(0).getEvidence(), equalTo("default-src 'unsafe-inline'"));
-        assertThat(alertsRaised.get(0).getAlertRef(), equalTo("10055-4"));
+        assertThat(alertsRaised.get(0).getAlertRef(), equalTo("10055-13"));
 
         assertThat(alertsRaised.get(1).getName(), equalTo("CSP: script-src unsafe-inline"));
         assertThat(alertsRaised.get(1).getRisk(), equalTo(Alert.RISK_MEDIUM));
