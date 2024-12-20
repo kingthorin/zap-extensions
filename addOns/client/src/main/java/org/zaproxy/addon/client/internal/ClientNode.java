@@ -19,12 +19,14 @@
  */
 package org.zaproxy.addon.client.internal;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.tree.DefaultMutableTreeNode;
 import org.parosproxy.paros.model.Session;
 
 @SuppressWarnings("serial")
+@JsonIgnoreProperties({"session", "parent", "lastLeaf", "firstLeaf", "firstChild", "lastChild"})
 public class ClientNode extends DefaultMutableTreeNode {
 
     private static final long serialVersionUID = 1L;
@@ -125,4 +127,12 @@ public class ClientNode extends DefaultMutableTreeNode {
     public String toString() {
         return getUserObject().getUrl();
     }
+
+    //    @Override
+    //    public boolean isRoot() {
+    //        if (parent == null) {
+    //            return false;
+    //        }
+    //        return super.isRoot();
+    //    }
 }

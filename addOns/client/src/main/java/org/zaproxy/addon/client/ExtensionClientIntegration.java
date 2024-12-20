@@ -81,6 +81,7 @@ import org.zaproxy.addon.client.ui.PopupMenuClientDetailsCopy;
 import org.zaproxy.addon.client.ui.PopupMenuClientHistoryCopy;
 import org.zaproxy.addon.client.ui.PopupMenuClientOpenInBrowser;
 import org.zaproxy.addon.client.ui.PopupMenuClientShowInSites;
+import org.zaproxy.addon.client.ui.PopupMenuExportClientMap;
 import org.zaproxy.addon.commonlib.ExtensionCommonlib;
 import org.zaproxy.addon.network.ExtensionNetwork;
 import org.zaproxy.zap.ZAP;
@@ -276,6 +277,13 @@ public class ExtensionClientIntegration extends ExtensionAdaptor {
             extensionHook
                     .getHookView()
                     .addOptionPanel(new OptionsPassiveScan(passiveScanController));
+
+            extensionHook
+                    .getHookMenu()
+                    .addPopupMenuItem(
+                            new PopupMenuExportClientMap(
+                                    Constant.messages.getString("client.tree.popup.export.menu"),
+                                    this));
         }
     }
 
@@ -812,5 +820,9 @@ public class ExtensionClientIntegration extends ExtensionAdaptor {
                 getMenuItemCustomScan().setEnabled(!Mode.safe.equals(mode));
             }
         }
+    }
+
+    public ClientMap getClientTree() {
+        return clientTree;
     }
 }

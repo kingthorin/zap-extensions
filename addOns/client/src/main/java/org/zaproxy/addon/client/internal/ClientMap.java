@@ -19,6 +19,7 @@
  */
 package org.zaproxy.addon.client.internal;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -34,6 +35,7 @@ import org.zaproxy.zap.eventBus.EventPublisher;
 import org.zaproxy.zap.model.Target;
 
 @SuppressWarnings("serial")
+@JsonIgnoreProperties({"parent", "root"}) // , "lastLeaf", "firstLeaf", "firstChild", "lastChild" })
 public class ClientMap extends SortedTreeModel implements EventPublisher {
 
     public static final String MAP_NODE_ADDED_EVENT = "client.mapNode.added";
@@ -44,7 +46,7 @@ public class ClientMap extends SortedTreeModel implements EventPublisher {
 
     private static final long serialVersionUID = 1L;
     private static final Logger LOGGER = LogManager.getLogger(ClientMap.class);
-    private ClientNode root;
+    public ClientNode root;
 
     public ClientMap(ClientNode root) {
         super(root);
