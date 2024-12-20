@@ -30,11 +30,103 @@ import org.zaproxy.addon.client.ExtensionClientIntegration;
 
 @Getter
 @AllArgsConstructor
-public class ClientSideComponent {
+public class ClientSideComponent implements Comparable<ClientSideComponent> {
 
-    public static final String REDIRECT = "Redirect";
+    public enum Type {
+        LINK(
+                "Link",
+                Constant.messages.getString(
+                        ExtensionClientIntegration.PREFIX + ".components.type.link"),
+                "link"),
+        BUTTON(
+                "Button",
+                Constant.messages.getString(
+                        ExtensionClientIntegration.PREFIX + ".components.type.button"),
+                "button"),
+        INPUT(
+                "Input",
+                Constant.messages.getString(
+                        ExtensionClientIntegration.PREFIX + ".components.type.input"),
+                "input"),
+        FORM(
+                "Form",
+                Constant.messages.getString(
+                        ExtensionClientIntegration.PREFIX + ".components.type.form"),
+                "form"),
+        COOKIES(
+                "Cookies",
+                Constant.messages.getString(ExtensionClientIntegration.PREFIX + ".type.Cookies"),
+                "Cookies"),
+        LOCALSTORAGE(
+                "Local Storage",
+                Constant.messages.getString(
+                        ExtensionClientIntegration.PREFIX + ".type.localStorage"),
+                "localStorage"),
+        SESSIONSTORAGE(
+                "Session Storage",
+                Constant.messages.getString(
+                        ExtensionClientIntegration.PREFIX + ".type.sessionStorage"),
+                "sessionStorage"),
+        REDIRECT(
+                "Redirect",
+                Constant.messages.getString(
+                        ExtensionClientIntegration.PREFIX + ".components.type.redirect"),
+                "redirect"),
+        CONTENTLOADED(
+                "Content Loaded",
+                Constant.messages.getString(
+                        ExtensionClientIntegration.PREFIX + ".components.type.contentLoaded"),
+                "contentLoaded"),
+        NODEADDED(
+                "Node Added",
+                Constant.messages.getString(ExtensionClientIntegration.PREFIX + ".type.nodeAdded"),
+                "nodeAdded"),
+        DOMMUTATION(
+                "DOM Mutation",
+                Constant.messages.getString(
+                        ExtensionClientIntegration.PREFIX + ".type.domMutation"),
+                "nodeAdded"),
+        PAGELOAD(
+                "Page Load",
+                Constant.messages.getString(ExtensionClientIntegration.PREFIX + ".type.pageLoad"),
+                "pageLoad"),
+        PAGEUNLOAD(
+                "Page Unload",
+                Constant.messages.getString(ExtensionClientIntegration.PREFIX + ".type.pageUnload"),
+                "pageUnload"),
+        UNKNOWN("Unknown", "Unknown", "Unknown");
 
-    public static final String CONTENT_LOADED = "ContentLoaded";
+        private String label;
+        private String name;
+        private String typeKey;
+
+        private Type(final String label, final String name, String typeKey) {
+            this.label = label;
+            this.name = name;
+            this.typeKey = typeKey;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getTypeKey() {
+            return typeKey;
+        }
+
+        public static Type getTypeForKey(String key) {
+            for (Type type : Type.values()) {
+                if (type.getTypeKey().equals(key)) {
+                    return type;
+                }
+            }
+            return Type.UNKNOWN;
+        }
+    }
 
     private final Map<String, String> data;
 
@@ -43,7 +135,7 @@ public class ClientSideComponent {
     private String parentUrl;
     private String href;
     private String text;
-    private String type;
+    private Type type;
     private String tagType;
     private int formId = -1;
 
@@ -56,7 +148,8 @@ public class ClientSideComponent {
         this.tagName = json.getString("tagName");
         this.id = json.getString("id");
         this.parentUrl = json.getString("url");
-        this.type = json.getString("type");
+        System.out.println(json.getString("type"));
+        this.type = Type.getTypeForKey(json.getString("type"));
         if (json.containsKey("href")) {
             this.href = json.getString("href");
         }
@@ -78,18 +171,21 @@ public class ClientSideComponent {
     public String getTypeForDisplay() {
         switch (tagName) {
             case "A":
-                return Constant.messages.getString(
-                        ExtensionClientIntegration.PREFIX + ".components.type.link");
+                return Type.LINK.getName();
             case "BUTTON":
-                return Constant.messages.getString(
-                        ExtensionClientIntegration.PREFIX + ".components.type.button");
+                return Type.BUTTON.getName();
             case "INPUT":
-                return Constant.messages.getString(
-                        ExtensionClientIntegration.PREFIX + ".components.type.input");
+                return Type.INPUT.getName();
             default:
-                String key = ExtensionClientIntegration.PREFIX + ".type." + type;
-                if (tagName.isEmpty() && Constant.messages.containsKey(key)) {
-                    return Constant.messages.getString(key);
+                if (type != null) {
+                    String key = ExtensionClientIntegration.PREFIX + ".type." + type.getName();
+                    if (tagName.isEmpty() && Constant.messages.containsKey(key)) {
+                        return Constant.messages.getString(key);
+                    }
+                    key = ExtensionClientIntegration.PREFIX + ".type." + type.getTypeKey();
+                    if (tagName.isEmpty() && Constant.messages.containsKey(key)) {
+                        return Constant.messages.getString(key);
+                    }
                 }
                 return tagName;
         }
@@ -100,7 +196,7 @@ public class ClientSideComponent {
             return false;
         }
         switch (type) {
-            case "Cookies", "localStorage", "sessionStorage":
+            case COOKIES, LOCALSTORAGE, SESSIONSTORAGE:
                 return true;
             default:
                 return false;
@@ -123,5 +219,58 @@ public class ClientSideComponent {
                 && Objects.equals(parentUrl, other.parentUrl)
                 && Objects.equals(tagName, other.tagName)
                 && Objects.equals(text, other.text);
+    }
+
+    @Override
+    public int compareTo(ClientSideComponent other) {
+        if (this.type == null || other.type == null) {
+            return nullCompare(this.type, other.type);
+        }
+        int result = stringCompare(this.getType().getLabel(), other.getType().getLabel());
+        if (result != 0) {
+            return result;
+        }
+        result = stringCompare(this.href, other.href);
+        if (result != 0) {
+            return result;
+        }
+        result = stringCompare(this.text, other.text);
+        if (result != 0) {
+            return result;
+        }
+        result = stringCompare(this.id, other.id);
+        if (result != 0) {
+            return result;
+        }
+        result = stringCompare(this.tagName, other.tagName);
+        if (result != 0) {
+            return result;
+        }
+        result = stringCompare(this.tagType, other.tagType);
+        if (result != 0) {
+            return result;
+        }
+        result = Integer.compare(this.formId, other.formId);
+        if (result != 0) {
+            return result;
+        }
+        return 0;
+    }
+
+    private static int stringCompare(String here, String other) {
+        if (here == null || other == null) {
+            return nullCompare(here, other);
+        }
+        return here.compareTo(other);
+    }
+
+    private static int nullCompare(Object here, Object other) {
+        if (here == other) {
+            return 0;
+        }
+        if (here == null) {
+            return -1;
+        }
+        return 1;
     }
 }

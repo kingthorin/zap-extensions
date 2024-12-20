@@ -185,11 +185,11 @@ public class ClientMap extends SortedTreeModel implements EventPublisher {
                     .addComponent(
                             new ClientSideComponent(
                                     Map.of(),
-                                    ClientSideComponent.REDIRECT,
+                                    ClientSideComponent.Type.REDIRECT.getName(),
                                     null,
                                     originalUrl,
                                     redirectedUrl,
-                                    ClientSideComponent.REDIRECT,
+                                    ClientSideComponent.Type.REDIRECT.getName(),
                                     null,
                                     null,
                                     -1));
@@ -220,11 +220,11 @@ public class ClientMap extends SortedTreeModel implements EventPublisher {
                 .addComponent(
                         new ClientSideComponent(
                                 Map.of(),
-                                ClientSideComponent.CONTENT_LOADED,
+                                ClientSideComponent.Type.CONTENTLOADED.getName(),
                                 null,
                                 null,
                                 null,
-                                ClientSideComponent.CONTENT_LOADED,
+                                ClientSideComponent.Type.CONTENTLOADED.getName(),
                                 null,
                                 null,
                                 -1));
