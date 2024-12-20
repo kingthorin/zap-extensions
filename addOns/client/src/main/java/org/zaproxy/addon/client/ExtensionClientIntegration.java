@@ -23,8 +23,10 @@ import java.awt.EventQueue;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Writer;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -57,6 +59,7 @@ import org.parosproxy.paros.model.SiteNode;
 import org.parosproxy.paros.view.View;
 import org.zaproxy.addon.client.impl.ClientZestRecorder;
 import org.zaproxy.addon.client.internal.ClientMap;
+import org.zaproxy.addon.client.internal.ClientMapWriter;
 import org.zaproxy.addon.client.internal.ClientNode;
 import org.zaproxy.addon.client.internal.ClientSideComponent;
 import org.zaproxy.addon.client.internal.ClientSideDetails;
@@ -82,6 +85,7 @@ import org.zaproxy.addon.client.ui.PopupMenuClientDetailsCopy;
 import org.zaproxy.addon.client.ui.PopupMenuClientHistoryCopy;
 import org.zaproxy.addon.client.ui.PopupMenuClientOpenInBrowser;
 import org.zaproxy.addon.client.ui.PopupMenuClientShowInSites;
+import org.zaproxy.addon.client.ui.PopupMenuExportClientMap;
 import org.zaproxy.addon.commonlib.ExtensionCommonlib;
 import org.zaproxy.addon.network.ExtensionNetwork;
 import org.zaproxy.zap.ZAP;
@@ -291,6 +295,13 @@ public class ExtensionClientIntegration extends ExtensionAdaptor {
                     .getMainFrame()
                     .getMainFooterPanel()
                     .addFooterToolbarRightComponent(pscanStatus.getCountLabel());
+
+            extensionHook
+                    .getHookMenu()
+                    .addPopupMenuItem(
+                            new PopupMenuExportClientMap(
+                                    Constant.messages.getString("client.tree.popup.export.menu"),
+                                    this));
         }
     }
 
@@ -862,5 +873,20 @@ public class ExtensionClientIntegration extends ExtensionAdaptor {
                 getMenuItemCustomScan().setEnabled(!Mode.safe.equals(mode));
             }
         }
+    }
+
+    public void exportClientMap(File file) {
+        try (Writer fileWriter = new FileWriter(file, false)) {
+            ClientMapWriter.exportClientMap(fileWriter, clientTree);
+        } catch (IOException e) {
+            LOGGER.warn(
+                    "Failed to create file writer for: {}, while exporting Client Map",
+                    file.getAbsolutePath(),
+                    e);
+        }
+    }
+
+    public void exportClientMap(String path) {
+        this.exportClientMap(new File(path));
     }
 }
