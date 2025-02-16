@@ -4,7 +4,22 @@ All notable changes to this add-on will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
-
+### Changed
+- Replace usage of CWE-200 for the following rules (Issue 8712):
+    - Application Error Disclosure (Issue 8716)
+    - HTTP Server Response Header (Issue 8724)
+    - Hash Disclosure (Issue 8717)
+    - Information Disclosure - Debug Error Messages (Issue 8720)
+    - Information Disclosure - Sensitive Information in HTTP Referrer Header (Issue 8722)
+    - Information Disclosure - Sensitive Information in URL (Issue 8721)
+    - Information Disclosure - Suspicious Comments (Issue 8723)
+    - Private IP Disclosure (Issue 8718)
+    - Server Leaks Information via "X-Powered-By" HTTP Response Header (Issue 8729)
+    - Session ID in URL Rewrite (Issue 8719)
+    - Timestamp Disclosure (Issue 8718)
+    - X-Backend-Server Header Information Leak
+    - X-ChromeLogger-Data (XCOLD) Header Information Leak
+    - X-Debug-Token Information Leak
 
 ## [62] - 2025-01-10
 ### Changed

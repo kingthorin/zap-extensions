@@ -104,7 +104,8 @@ public class ServerHeaderInfoLeakScanRule extends PluginPassiveScanner
                 .setReference(
                         Constant.messages.getString("pscanrules.serverheaderinfoleak.general.refs"))
                 .setEvidence(directive)
-                .setCweId(200)
+                .setCweId(497) //  CWE-497: Exposure of Sensitive System Information to an
+                // Unauthorized Control Sphere
                 .setWascId(13);
     }
 
