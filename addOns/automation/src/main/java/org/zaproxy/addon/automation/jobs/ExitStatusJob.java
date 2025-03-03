@@ -80,7 +80,10 @@ public class ExitStatusJob extends AutomationJob {
 
         try {
             for (JobResultData data : progress.getAllJobResultData()) {
-                for (Alert alert : data.getAllAlertData()) {
+                for (Alert alert :
+                        data.getAllAlertData().stream()
+                                .filter(a -> a.getConfidence() != Alert.CONFIDENCE_FALSE_POSITIVE)
+                                .toList()) {
                     if (errorRisk != null && errorRisk <= alert.getRisk()) {
                         progress.error(
                                 Constant.messages.getString(

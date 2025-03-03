@@ -24,6 +24,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -348,22 +349,64 @@ class ExitStatusJobUnitTest extends TestUtils {
         assertThat(ExtensionAutomation.getExitOverride(), is(equalTo(Integer.parseInt(exitcode))));
     }
 
-    private JobResultData getTestData(String alertLevel) {
-        Alert alert = new Alert(-1, JobUtils.parseAlertRisk(alertLevel), 2, "test");
+    @ParameterizedTest
+    @CsvSource({
+        "HIGH,MEDIUM,4",
+        "medium,medium,3",
+        "low,medium,2",
+        "High,False Positive,0",
+        "Medium,False Positive,0",
+        "Low,False Positive,0"
+    })
+    void shouldSetExitCodeExcludingFalsePositive(
+            String alertrisk, String confidence, String exitcode) {
+        // Given
+        ExitStatusJob job = new ExitStatusJob();
+        AutomationProgress progress = new AutomationProgress();
+        progress.addJobResultData(getTestData(alertrisk, confidence));
 
-        JobResultData data =
-                new JobResultData("test") {
+        // When
+        job.getParameters().setOkExitValue(Integer.parseInt(exitcode) > 0 ? 2 : 0);
+        job.getParameters().setWarnExitValue(3);
+        job.getParameters().setErrorExitValue(4);
+        job.getParameters().setErrorLevel("high");
+        job.getParameters().setWarnLevel("medium");
+        job.verifyParameters(progress);
+        job.runJob(new AutomationEnvironment(progress), progress);
 
-                    @Override
-                    public String getKey() {
-                        return "test";
-                    }
+        // Then
+        Collection<JobResultData> data = progress.getAllJobResultData();
+        Collection<Alert> alerts = new ArrayList<>();
+        data.forEach(e -> alerts.addAll(e.getAllAlertData()));
+        assertThat(alerts.size(), is(equalTo(1)));
+        Alert alert = (Alert) ((ArrayList<?>) alerts).get(0);
+        assertThat(alert.getConfidence(), is(equalTo(JobUtils.parseAlertConfidence(confidence))));
+        assertThat(ExtensionAutomation.getExitOverride(), is(equalTo(Integer.parseInt(exitcode))));
+    }
 
-                    @Override
-                    public Collection<Alert> getAllAlertData() {
-                        return Arrays.asList(alert);
-                    }
-                };
-        return data;
+    private static JobResultData getTestData(String alertLevel) {
+        return getTestData(alertLevel, "2");
+    }
+
+    private static JobResultData getTestData(String alertLevel, String confidence) {
+        Alert alert =
+                new Alert(
+                        -1,
+                        JobUtils.parseAlertRisk(alertLevel),
+                        JobUtils.parseAlertConfidence(confidence),
+                        "test");
+
+        return new JobResultData("test") {
+
+            @Override
+            public String getKey() {
+                return "test";
+            }
+
+            @Override
+            public Collection<Alert> getAllAlertData() {
+                return Arrays.asList(alert);
+            }
+        };
     }
 }
