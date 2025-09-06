@@ -249,6 +249,7 @@ public class ExtensionWappalyzer extends ExtensionAdaptor
     public void unload() {
         super.unload();
 
+        getTechPanel().removeSiteTreeSelectionListener();
         getPscanExtension().getPassiveScannersManager().remove(passiveScanner);
     }
 
@@ -325,7 +326,7 @@ public class ExtensionWappalyzer extends ExtensionAdaptor
         return Collections.unmodifiableSet(siteTechMap.keySet());
     }
 
-    static String normalizeSite(URI uri) {
+    protected static String normalizeSite(URI uri) {
         String lead = uri.getScheme() + "://";
         try {
             return lead + uri.getAuthority();

@@ -40,8 +40,11 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JToolBar;
+import javax.swing.JTree;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.event.TreeSelectionEvent;
+import javax.swing.event.TreeSelectionListener;
 import javax.swing.table.TableCellRenderer;
 import org.jdesktop.swingx.JXTable;
 import org.jdesktop.swingx.renderer.DefaultTableRenderer;
@@ -50,6 +53,7 @@ import org.jdesktop.swingx.renderer.StringValues;
 import org.parosproxy.paros.Constant;
 import org.parosproxy.paros.control.Control;
 import org.parosproxy.paros.extension.AbstractPanel;
+import org.parosproxy.paros.model.SiteNode;
 import org.parosproxy.paros.view.View;
 import org.zaproxy.zap.utils.DisplayUtils;
 import org.zaproxy.zap.utils.SortedComboBoxModel;
@@ -78,6 +82,8 @@ public class TechPanel extends AbstractPanel {
     private TableExportButton<JXTable> exportButton = null;
     private ZapToggleButton enableButton = null;
     private JButton optionsButton;
+
+    private LinkWithSitesTreeSelectionListener linkWithSitesTreeSelectionListener;
 
     private static final Icon TRANSPARENT_ICON =
             new Icon() {
@@ -117,6 +123,18 @@ public class TechPanel extends AbstractPanel {
         this.setMnemonic(Constant.messages.getChar("wappalyzer.panel.mnemonic"));
         this.add(getPanelCommand(), getPanelCommand().getName());
         this.getEnableToggleButton().setSelected(extension.isWappalyzerEnabled());
+
+        addSiteTreeSelectionListener();
+    }
+
+    private void addSiteTreeSelectionListener() {
+        JTree sitesTree = View.getSingleton().getSiteTreePanel().getTreeSite();
+        sitesTree.addTreeSelectionListener(getLinkWithSitesTreeSelectionListener());
+    }
+
+    protected void removeSiteTreeSelectionListener() {
+        JTree sitesTree = View.getSingleton().getSiteTreePanel().getTreeSite();
+        sitesTree.removeTreeSelectionListener(getLinkWithSitesTreeSelectionListener());
     }
 
     /**
@@ -385,5 +403,25 @@ public class TechPanel extends AbstractPanel {
                                                     "wappalyzer.optionspanel.name")));
         }
         return optionsButton;
+    }
+
+    private class LinkWithSitesTreeSelectionListener implements TreeSelectionListener {
+
+        @Override
+        public void valueChanged(TreeSelectionEvent e) {
+            getSiteSelect()
+                    .setSelectedItem(
+                            ExtensionWappalyzer.normalizeSite(
+                                    ((SiteNode) e.getPath().getLastPathComponent())
+                                            .getHistoryReference()
+                                            .getURI()));
+        }
+    }
+
+    protected LinkWithSitesTreeSelectionListener getLinkWithSitesTreeSelectionListener() {
+        if (linkWithSitesTreeSelectionListener == null) {
+            linkWithSitesTreeSelectionListener = new LinkWithSitesTreeSelectionListener();
+        }
+        return linkWithSitesTreeSelectionListener;
     }
 }
