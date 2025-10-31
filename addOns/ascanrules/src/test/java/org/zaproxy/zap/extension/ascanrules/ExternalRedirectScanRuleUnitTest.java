@@ -846,6 +846,7 @@ class ExternalRedirectScanRuleUnitTest extends ActiveScannerTest<ExternalRedirec
             Set<String> comments =
                     ExternalRedirectScanRule.extractJsComments(BODY_TEMPLATE.formatted(content));
             // Then
+            ;
             assertThat(comments, is(empty()));
         }
     }

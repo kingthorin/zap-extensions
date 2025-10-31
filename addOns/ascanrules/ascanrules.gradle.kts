@@ -52,6 +52,7 @@ dependencies {
     zapAddOn("oast")
 
     implementation(libs.ascanrules.procyonCompilerTools)
+    implementation("org.mozilla:rhino:1.8.0")
 
     testImplementation(parent!!.childProjects.get("commonlib")!!.sourceSets.test.get().output)
     testImplementation(project(":testutils"))
