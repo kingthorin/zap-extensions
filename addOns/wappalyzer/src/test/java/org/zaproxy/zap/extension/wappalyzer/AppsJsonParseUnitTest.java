@@ -35,7 +35,7 @@ class AppsJsonParseUnitTest {
         List<Exception> parsingExceptions = Collections.synchronizedList(new ArrayList<>());
         // When
         TechsJsonParser parser =
-                new TechsJsonParser((pattern, e) -> errs.add(e.toString()), parsingExceptions::add);
+                new TechsJsonParser((message) -> errs.add(message), parsingExceptions::add);
         parser.parse("categories.json", generateFileList(), true);
         // Then
         assertEquals(Collections.emptyList(), errs);
