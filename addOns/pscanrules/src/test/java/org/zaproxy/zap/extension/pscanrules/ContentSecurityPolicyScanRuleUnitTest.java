@@ -401,53 +401,95 @@ class ContentSecurityPolicyScanRuleUnitTest
         assertThat(alertsRaised.size(), equalTo(0));
     }
 
-    @Test
-    void shouldAlertWithCspWarningNoticesWhenApplicableAndIgnoreTrustedTypes() {
+    @ParameterizedTest
+    @CsvSource(
+            value = {
+                "default-src 'self'; trusted-types | Empty trusted-types directive allows all policy names",
+                "default-src 'self'; require-trusted-types-for | The require-trusted-types-for directive requires a value"
+            },
+            delimiter = '|')
+    void shouldAlertWhenTrustedTypesDirectivesMissingValues(String policy, String expectedError) {
         // Given
-        String policy = "default-src none; report-to csp-endpoint; require-trusted-types 'script'";
         HttpMessage msg = createHttpMessage(policy);
         // When
         scanHttpResponseReceive(msg);
         // Then
+        // Should raise 2 alerts: one for the trusted-types issue, one for missing
+        // frame-ancestors/form-action
         assertThat(alertsRaised.size(), equalTo(2));
+
+        // First alert: CSP Notices about the trusted-types directive
         assertThat(alertsRaised.get(0).getName(), equalTo("CSP: Notices"));
-        assertThat(
-                alertsRaised.get(0).getOtherInfo(),
-                equalTo(
-                        "Warnings:\nThis host name is unusual, and likely meant to be a keyword that is missing the required quotes: 'none'.\n"));
+        assertThat(alertsRaised.get(0).getOtherInfo(), containsString(expectedError));
         assertThat(alertsRaised.get(0).getEvidence(), equalTo(policy));
         assertThat(alertsRaised.get(0).getRisk(), equalTo(Alert.RISK_LOW));
         assertThat(alertsRaised.get(0).getConfidence(), equalTo(Alert.CONFIDENCE_HIGH));
         assertThat(alertsRaised.get(0).getAlertRef(), equalTo("10055-3"));
+
+        // Second alert: Missing directives with no fallback
+        assertThat(
+                alertsRaised.get(1).getName(),
+                equalTo("CSP: Failure to Define Directive with No Fallback"));
+        assertThat(alertsRaised.get(1).getEvidence(), equalTo(policy));
+        assertThat(alertsRaised.get(1).getRisk(), equalTo(Alert.RISK_MEDIUM));
+        assertThat(alertsRaised.get(1).getConfidence(), equalTo(Alert.CONFIDENCE_HIGH));
+        assertThat(alertsRaised.get(1).getAlertRef(), equalTo("10055-13"));
     }
 
-    @Test
-    void shouldAlertWithNoFallbackWhenApplicableAndIgnoreTrustedTypesInMeta() {
+    @ParameterizedTest
+    @CsvSource(
+            value = {
+                "default-src 'self'; trusted-types * | Wildcard policy names (*) permit any policy name",
+                "default-src 'self'; trusted-types * 'allow-duplicates' | Wildcard policy names (*) permit any policy name"
+            },
+            delimiter = '|')
+    void shouldAlertOnWildcardTrustedTypes(String policy, String expectedWarning) {
         // Given
-        String policy = "default-src none; report-to csp-endpoint; require-trusted-types 'script'";
-        HttpMessage msg = createHttpMessage();
-        msg.setResponseBody(
-                "<html><head><<meta http-equiv=\""
-                        + HttpFieldsNames.CONTENT_SECURITY_POLICY
-                        + "\" content=\""
-                        + policy
-                        + "\"></head></html>");
-        msg.getResponseHeader().addHeader(HttpHeader.CONTENT_TYPE, "text/html");
+        HttpMessage msg = createHttpMessage(policy);
         // When
         scanHttpResponseReceive(msg);
         // Then
+        // Should raise 2 alerts: one for wildcard warning, one for missing
+        // frame-ancestors/form-action
         assertThat(alertsRaised.size(), equalTo(2));
+
+        // First alert: CSP Notices about wildcard usage
         assertThat(alertsRaised.get(0).getName(), equalTo("CSP: Notices"));
-        Alert alert = alertsRaised.get(1);
-        assertThat(alert.getName(), equalTo("CSP: Failure to Define Directive with No Fallback"));
+        assertThat(alertsRaised.get(0).getOtherInfo(), containsString(expectedWarning));
+        assertThat(alertsRaised.get(0).getEvidence(), equalTo(policy));
+        assertThat(alertsRaised.get(0).getRisk(), equalTo(Alert.RISK_LOW));
+        assertThat(alertsRaised.get(0).getConfidence(), equalTo(Alert.CONFIDENCE_HIGH));
+        assertThat(alertsRaised.get(0).getAlertRef(), equalTo("10055-3"));
+
+        // Second alert: Missing directives with no fallback
         assertThat(
-                alert.getOtherInfo(),
-                equalTo(
-                        "The directive(s): form-action is/are among the directives that do not fallback to default-src."));
-        assertThat(alert.getEvidence(), equalTo(policy));
-        assertThat(alert.getRisk(), equalTo(Alert.RISK_MEDIUM));
-        assertThat(alert.getConfidence(), equalTo(Alert.CONFIDENCE_HIGH));
-        assertThat(alert.getAlertRef(), equalTo("10055-13"));
+                alertsRaised.get(1).getName(),
+                equalTo("CSP: Failure to Define Directive with No Fallback"));
+        assertThat(alertsRaised.get(1).getEvidence(), equalTo(policy));
+        assertThat(alertsRaised.get(1).getRisk(), equalTo(Alert.RISK_MEDIUM));
+        assertThat(alertsRaised.get(1).getConfidence(), equalTo(Alert.CONFIDENCE_HIGH));
+        assertThat(alertsRaised.get(1).getAlertRef(), equalTo("10055-13"));
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            value = {
+                "default-src 'self'; trusted-types myPolicy 'allow-duplicates'",
+                "default-src 'self'; trusted-types policy1 policy2 policy3"
+            })
+    void shouldNotAlertOnValidTrustedTypesPolicies(String policy) {
+        // Given
+        HttpMessage msg = createHttpMessage(policy);
+        // When
+        scanHttpResponseReceive(msg);
+        // Then
+        // Should only raise 1 alert for missing frame-ancestors/form-action, not for
+        // trusted-types
+        assertThat(alertsRaised.size(), equalTo(1));
+        assertThat(
+                alertsRaised.get(0).getName(),
+                equalTo("CSP: Failure to Define Directive with No Fallback"));
+        assertThat(alertsRaised.get(0).getEvidence(), equalTo(policy));
     }
 
     @ParameterizedTest

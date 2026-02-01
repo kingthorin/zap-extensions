@@ -44,6 +44,16 @@ plugins {
     antlr
 }
 
+repositories {
+    maven {
+        name = "Central Portal Snapshots"
+        url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+        mavenContent {
+            snapshotsOnly()
+        }
+    }
+}
+
 configurations {
     api {
         setExtendsFrom(extendsFrom.filterNot { it == antlr.get() })
