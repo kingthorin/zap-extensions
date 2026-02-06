@@ -60,6 +60,7 @@ import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.quality.Strictness;
 import org.parosproxy.paros.control.Control;
 import org.parosproxy.paros.core.scanner.Alert;
@@ -184,15 +185,16 @@ class GraphQlFingerprinterUnitTest extends TestUtils {
         var fp = buildFingerprinter(endpointUrl);
         // When
         fp.fingerprint();
-        // Then
+        // Then - 33 fingerprinters, each making 1-3 requests = 27 total requests when all fail
         assertThat(nano.getRequestedUris(), hasSize(27));
         verifyNoInteractions(extensionAlert);
     }
 
     static Stream<Arguments> fingerprintData() {
         return Stream.of(
-                arguments("Lighthouse", errorResponse("Internal server error")),
-                arguments("Lighthouse", errorResponse("internal", "category")),
+                arguments(
+                        "Lighthouse",
+                        "{\"errors\": [{\"message\": \"Internal server error\", \"extensions\": {\"category\": \"internal\"}}], \"data\": null}"),
                 arguments("caliban", errorResponse("Fragment 'zap' is not used in any spread")),
                 arguments(
                         "lacinia",
@@ -205,21 +207,16 @@ class GraphQlFingerprinterUnitTest extends TestUtils {
                         "GraphQL Yoga",
                         errorResponse(
                                 "asyncExecutionResult[Symbol.asyncIterator] is not a function")),
-                arguments("GraphQL Yoga", errorResponse("Unexpected error.")),
                 arguments("Agoo", errorResponse("eval error", "code")),
                 arguments("Dgraph", "{ \"data\": { \"__typename\":\"Query\" } }"),
                 arguments("gqlgen", errorResponse("expected at least one definition")),
                 arguments("gqlgen", errorResponse("Expected Name, found <Invalid>")),
                 arguments("Ariadne", errorResponse("Unknown directive '@abc'.", "message", false)),
                 arguments("Ariadne", errorResponse("The query must be a string.")),
+                // AppSync uses errorType field directly in error objects (non-standard)
                 arguments(
-                        "Apollo",
-                        errorResponse(
-                                "Directive \\\"@skip\\\" argument \\\"if\\\" of type \\\"Boolean!\\\" is required, but it was not provided.")),
-                arguments(
-                        "Apollo",
-                        errorResponse("Directive \\\"@deprecated\\\" may not be used on QUERY.")),
-                arguments("AWS AppSync", errorResponse("MisplacedDirective")),
+                        "AWS AppSync",
+                        "{ \"errors\": [{ \"errorType\": \"MisplacedDirective\", \"message\": \"Directive is misplaced\" }], \"data\": null }"),
                 arguments("Hasura", "{ \"data\": { \"__typename\":\"query_root\" } }"),
                 arguments(
                         "Hasura",
@@ -398,6 +395,422 @@ class GraphQlFingerprinterUnitTest extends TestUtils {
         List<DiscoveredGraphQlEngine> handler = new ArrayList<>();
         // When / Then
         assertDoesNotThrow(() -> GraphQlFingerprinter.addEngineHandler(handler::add));
+    }
+
+    @Test
+    void shouldNotFalsePositiveOnApolloWithSingleCheck() throws Exception {
+        // Given - Generic GraphQL implementation that happens to match one Apollo pattern
+        nano.addHandler(
+                new GraphQlResponseHandler(
+                        errorResponse("Directive \\\"@deprecated\\\" may not be used on QUERY.")));
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngine = new ArrayList<>(1);
+        GraphQlFingerprinter.addEngineHandler(discoveredEngine::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then - Should NOT detect as Apollo (needs 2+ indicators)
+        assertThat(discoveredEngine.size(), is(0));
+    }
+
+    @Test
+    void shouldDetectApolloWithMultipleIndicators() throws Exception {
+        // Given - Response with multiple Apollo patterns
+        nano.addHandler(
+                new NanoServerHandler("/graphql") {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String body = getBody(session);
+                        String response;
+                        // Apollo check 1: query @skip - return Apollo-specific error
+                        if (body.contains("@skip")) {
+                            response =
+                                    errorResponse(
+                                            """
+                                            Directive \\"@skip\\" argument \\"if\\" of type \\"Boolean!\\" \
+                                            is required, but it was not provided.""");
+                        }
+                        // Apollo check 2: query @deprecated - return Apollo-specific error
+                        else if (body.contains("@deprecated")) {
+                            response =
+                                    errorResponse(
+                                            """
+                                            Directive \\"@deprecated\\" may not be used on QUERY.""");
+                        }
+                        // Any other request - use RootQuery to avoid matching Dgraph's "Query"
+                        // pattern
+                        else {
+                            response =
+                                    """
+                                    {"data": {"__typename": "RootQuery"}}""";
+                        }
+                        return newFixedLengthResponse(
+                                NanoHTTPD.Response.Status.OK, "application/json", response);
+                    }
+                });
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngine = new ArrayList<>(1);
+        GraphQlFingerprinter.addEngineHandler(discoveredEngine::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then
+        assertThat(discoveredEngine, hasSize(1));
+        assertThat(discoveredEngine.get(0).getName(), is(equalTo("Apollo")));
+    }
+
+    @Test
+    void shouldDetectApolloWithExtensions() throws Exception {
+        // Given - Apollo with one directive error + extensions field
+        nano.addHandler(
+                new NanoServerHandler("/graphql") {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String body = getBody(session);
+                        String response;
+                        // Apollo check 1: query @skip - return Apollo-specific error
+                        if (body.contains("@skip") && !body.contains("@cascade")) {
+                            response =
+                                    errorResponse(
+                                            """
+                                            Directive \\"@skip\\" argument \\"if\\" of type \\"Boolean!\\" \
+                                            is required, but it was not provided.""");
+                        }
+                        // Apollo check 2: query @deprecated - no match (generic response)
+                        else if (body.contains("@deprecated")) {
+                            response =
+                                    """
+                                    {"data": {"__typename": "RootQuery"}}""";
+                        }
+                        // Apollo check 3: query { __typename } - return with Apollo extensions
+                        else if (body.contains("__typename")
+                                && !body.contains("@")
+                                && !body.contains("fragment")) {
+                            response =
+                                    """
+                                    {"data": {"__typename": "RootQuery"}, "extensions": {"tracing": {}}}""";
+                        }
+                        // Any other request - use RootQuery to avoid matching Dgraph's "Query"
+                        // pattern
+                        else {
+                            response =
+                                    """
+                                    {"data": {"__typename": "RootQuery"}}""";
+                        }
+                        return newFixedLengthResponse(
+                                NanoHTTPD.Response.Status.OK, "application/json", response);
+                    }
+                });
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngine = new ArrayList<>(1);
+        GraphQlFingerprinter.addEngineHandler(discoveredEngine::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then
+        assertThat(discoveredEngine, hasSize(1));
+        assertThat(discoveredEngine.get(0).getName(), is(equalTo("Apollo")));
+    }
+
+    @Test
+    void shouldHaveEvidenceInAlertMessageForApollo() throws Exception {
+        // Given - Response with multiple Apollo patterns (testing evidence alignment)
+        ExtensionAlert extensionAlert = mockExtensionAlert();
+        ArgumentCaptor<Alert> alertCaptor = ArgumentCaptor.forClass(Alert.class);
+
+        nano.addHandler(
+                new NanoServerHandler("/graphql") {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String body = getBody(session);
+                        String response;
+                        // Apollo check 1: query @skip - return Apollo-specific error
+                        if (body.contains("@skip")) {
+                            response =
+                                    errorResponse(
+                                            """
+                                            Directive \\"@skip\\" argument \\"if\\" of type \\"Boolean!\\" \
+                                            is required, but it was not provided.""");
+                        }
+                        // Apollo check 2: query @deprecated - return Apollo-specific error
+                        else if (body.contains("@deprecated")) {
+                            response =
+                                    errorResponse(
+                                            """
+                                            Directive \\"@deprecated\\" may not be used on QUERY.""");
+                        }
+                        // Any other request - use RootQuery to avoid matching Dgraph's "Query"
+                        // pattern
+                        else {
+                            response =
+                                    """
+                                    {"data": {"__typename": "RootQuery"}}""";
+                        }
+                        return newFixedLengthResponse(
+                                NanoHTTPD.Response.Status.OK, "application/json", response);
+                    }
+                });
+        var fp = buildFingerprinter(endpointUrl);
+
+        // When
+        fp.fingerprint();
+
+        // Then - Verify the evidence is actually in the alert's message body
+        verify(extensionAlert, times(1)).alertFound(alertCaptor.capture(), any());
+        Alert capturedAlert = alertCaptor.getValue();
+
+        String evidence = capturedAlert.getEvidence();
+        assertThat("Evidence should not be null", evidence, is(notNullValue()));
+
+        String messageBody = capturedAlert.getMessage().getResponseBody().toString();
+        // Evidence may contain unescaped quotes (from parsed JSON), but the raw response body
+        // has JSON-escaped quotes, so we need to check with escaped version too
+        String escapedEvidence = evidence.replace("\"", "\\\"");
+        assertThat(
+                "Evidence (possibly JSON-escaped) should be found in alert message body",
+                messageBody.contains(evidence) || messageBody.contains(escapedEvidence),
+                is(true));
+    }
+
+    @Test
+    void shouldHaveEvidenceFromLastFulfilledConditionNotLastQuerySent() throws Exception {
+        // Given - Apollo detection where:
+        // - Test 1 (@skip) matches
+        // - Test 2 (@deprecated) matches
+        // - Test 3 (__typename extensions) does NOT match
+        // The evidence should be from @deprecated (last fulfilled), not __typename (last sent)
+        ExtensionAlert extensionAlert = mockExtensionAlert();
+        ArgumentCaptor<Alert> alertCaptor = ArgumentCaptor.forClass(Alert.class);
+
+        String deprecatedError = "Directive \"@deprecated\" may not be used on QUERY.";
+
+        nano.addHandler(
+                new NanoServerHandler("/graphql") {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String body = getBody(session);
+                        String response;
+                        // Apollo check 1: query @skip - return Apollo-specific error
+                        if (body.contains("@skip")) {
+                            response =
+                                    errorResponse(
+                                            """
+                                            Directive \\"@skip\\" argument \\"if\\" of type \\"Boolean!\\" \
+                                            is required, but it was not provided.""");
+                        }
+                        // Apollo check 2: query @deprecated - return Apollo-specific error
+                        else if (body.contains("@deprecated")) {
+                            response =
+                                    errorResponse(
+                                            """
+                                            Directive \\"@deprecated\\" may not be used on QUERY.""");
+                        }
+                        // Apollo check 3: __typename - NO extensions (does not fulfill condition)
+                        else {
+                            response =
+                                    """
+                                    {"data": {"__typename": "RootQuery"}}""";
+                        }
+                        return newFixedLengthResponse(
+                                NanoHTTPD.Response.Status.OK, "application/json", response);
+                    }
+                });
+        var fp = buildFingerprinter(endpointUrl);
+
+        // When
+        fp.fingerprint();
+
+        // Then - Evidence should be from @deprecated query, not __typename query
+        verify(extensionAlert, times(1)).alertFound(alertCaptor.capture(), any());
+        Alert capturedAlert = alertCaptor.getValue();
+
+        String evidence = capturedAlert.getEvidence();
+        assertThat("Evidence should not be null", evidence, is(notNullValue()));
+        assertThat(
+                "Evidence should be from @deprecated check (last fulfilled condition)",
+                evidence,
+                is(equalTo(deprecatedError)));
+
+        String messageBody = capturedAlert.getMessage().getResponseBody().toString();
+        // The message should contain the @deprecated error, NOT the __typename response
+        assertThat(
+                "Message should contain @deprecated error",
+                messageBody,
+                containsString("@deprecated"));
+        assertThat(
+                "Message should NOT be the __typename response (which has no errors)",
+                messageBody,
+                containsString("errors"));
+    }
+
+    @Test
+    void shouldNotDetectYogaWithOnlyGenericError() throws Exception {
+        // Given - Generic error that was previously matching
+        nano.addHandler(new GraphQlResponseHandler(errorResponse("Unexpected error.")));
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngine = new ArrayList<>(1);
+        GraphQlFingerprinter.addEngineHandler(discoveredEngine::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then - Should NOT detect (generic error removed)
+        assertThat(discoveredEngine.size(), is(0));
+    }
+
+    @Test
+    void shouldDetectTartifletteWithTypoFallback() throws Exception {
+        // Given - Fixed typo version
+        nano.addHandler(
+                new GraphQlResponseHandler(errorResponse("Unknown Directive < @doesnotexist >.")));
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngine = new ArrayList<>(1);
+        GraphQlFingerprinter.addEngineHandler(discoveredEngine::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then - Should still detect with corrected spelling
+        assertThat(discoveredEngine, hasSize(1));
+        assertThat(discoveredEngine.get(0).getName(), is(equalTo("tartiflette")));
+    }
+
+    @Test
+    void shouldDetectStrawberryWithDataField() throws Exception {
+        // Given - Strawberry's specific response format
+        nano.addHandler(
+                new GraphQlResponseHandler(
+                        "{\"errors\": [{\"message\": \"Directive '@deprecated' may not be used on query.\", \"locations\": [{\"line\": 1}]}], \"data\": {}}"));
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngine = new ArrayList<>(1);
+        GraphQlFingerprinter.addEngineHandler(discoveredEngine::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then
+        assertThat(discoveredEngine, hasSize(1));
+        assertThat(discoveredEngine.get(0).getName(), is(equalTo("Strawberry")));
+    }
+
+    @Test
+    void shouldNotDetectLighthouseWithOnlyInternalServerError() throws Exception {
+        // Given - Generic "Internal server error" without extensions.category
+        nano.addHandler(new GraphQlResponseHandler(errorResponse("Internal server error")));
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngine = new ArrayList<>(1);
+        GraphQlFingerprinter.addEngineHandler(discoveredEngine::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then - Should NOT detect (needs category field in extensions)
+        assertThat(discoveredEngine.size(), is(0));
+    }
+
+    @Test
+    void shouldDetectLighthouseWithExtensionsCategory() throws Exception {
+        // Given - Lighthouse error with extensions.category = "internal"
+        nano.addHandler(
+                new GraphQlResponseHandler(
+                        "{\"errors\": [{\"message\": \"Internal server error\", \"extensions\": {\"category\": \"internal\"}}], \"data\": null}"));
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngine = new ArrayList<>(1);
+        GraphQlFingerprinter.addEngineHandler(discoveredEngine::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then
+        assertThat(discoveredEngine, hasSize(1));
+        assertThat(discoveredEngine.get(0).getName(), is(equalTo("Lighthouse")));
+    }
+
+    @Test
+    void shouldDetectLighthouseWithExtensionsCategoryAndTrace() throws Exception {
+        // Given - Lighthouse error with extensions.category and trace
+        nano.addHandler(
+                new GraphQlResponseHandler(
+                        "{\"errors\": [{\"message\": \"Internal server error\", \"extensions\": {\"category\": \"internal\", \"trace\": []}}], \"data\": null}"));
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngine = new ArrayList<>(1);
+        GraphQlFingerprinter.addEngineHandler(discoveredEngine::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then
+        assertThat(discoveredEngine, hasSize(1));
+        assertThat(discoveredEngine.get(0).getName(), is(equalTo("Lighthouse")));
+    }
+
+    @Test
+    void shouldHaveEvidenceInAlertMessageForLighthouse() throws Exception {
+        // Given - Lighthouse error with extensions.category (testing evidence alignment)
+        ExtensionAlert extensionAlert = mockExtensionAlert();
+        ArgumentCaptor<Alert> alertCaptor = ArgumentCaptor.forClass(Alert.class);
+
+        String lighthouseResponse =
+                """
+                {"errors": [{"message": "Internal server error", "extensions": {"category": "internal", "trace": []}}], "data": null}""";
+        nano.addHandler(new GraphQlResponseHandler(lighthouseResponse));
+        var fp = buildFingerprinter(endpointUrl);
+
+        // When
+        fp.fingerprint();
+
+        // Then - Verify the evidence is actually in the alert's message body
+        verify(extensionAlert, times(1)).alertFound(alertCaptor.capture(), any());
+        Alert capturedAlert = alertCaptor.getValue();
+
+        String evidence = capturedAlert.getEvidence();
+        assertThat("Evidence should not be null", evidence, is(notNullValue()));
+
+        String messageBody = capturedAlert.getMessage().getResponseBody().toString();
+        // Evidence may contain unescaped quotes (from parsed JSON), but the raw response body
+        // has JSON-escaped quotes, so we need to check with escaped version too
+        String escapedEvidence = evidence.replace("\"", "\\\"");
+        assertThat(
+                "Evidence (possibly JSON-escaped) should be found in alert message body",
+                messageBody.contains(evidence) || messageBody.contains(escapedEvidence),
+                is(true));
+    }
+
+    @Test
+    void shouldNotMisidentifyGraphQlJavaAsAwsAppSync() throws Exception {
+        // Given - graphql-java response with standard error format (no errorType field)
+        // This is what vanilla graphql-java returns, NOT AppSync
+        String graphqlJavaResponse =
+                """
+                {
+                    "errors": [{
+                        "message": "Validation error of type MisplacedDirective",
+                        "locations": [{"line": 1, "column": 7}],
+                        "extensions": {"classification": "ValidationError"}
+                    }],
+                    "data": null
+                }
+                """;
+        nano.addHandler(new GraphQlResponseHandler(graphqlJavaResponse));
+        var fp = buildFingerprinter(endpointUrl);
+        List<DiscoveredGraphQlEngine> discoveredEngines = new ArrayList<>();
+        GraphQlFingerprinter.addEngineHandler(discoveredEngines::add);
+
+        // When
+        fp.fingerprint();
+
+        // Then - Should NOT detect as AWS AppSync
+        // graphql-java uses extensions.classification, not errorType field
+        boolean detectedAsAppSync =
+                discoveredEngines.stream()
+                        .anyMatch(e -> e.getName().equalsIgnoreCase("aws appsync"));
+        assertThat(
+                "graphql-java should NOT be misidentified as AWS AppSync",
+                detectedAsAppSync,
+                is(false));
     }
 
     private static void assertNoErrors(ExtensionAlert extMock, String loggerOutput) {
