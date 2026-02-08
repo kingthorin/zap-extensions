@@ -19,7 +19,6 @@
  */
 package org.zaproxy.addon.graphql;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -53,6 +52,7 @@ public class GraphQlFingerprinter {
     private final Map<String, HttpMessage> queryCache;
 
     private HttpMessage lastQueryMsg;
+    private HttpMessage matchedMessage;
     private String matchedString;
 
     public GraphQlFingerprinter(URI endpointUrl, Requestor requestor) {
@@ -141,34 +141,63 @@ public class GraphQlFingerprinter {
     }
 
     boolean errorContains(String substring, String errorField) {
-        if (lastQueryMsg == null) {
+        JsonNode errors = getResponseJsonField("errors");
+        if (errors == null || !errors.isArray()) {
             return false;
         }
-        if (!lastQueryMsg.getResponseHeader().isJson()) {
-            return false;
-        }
-        try {
-            String response = lastQueryMsg.getResponseBody().toString();
-            JsonNode errors = OBJECT_MAPPER.readValue(response, JsonNode.class).get("errors");
-            if (errors == null || !errors.isArray()) {
-                return false;
+        for (var error : errors) {
+            if (!error.isObject()) {
+                continue;
             }
-            for (var error : errors) {
-                if (!error.isObject()) {
-                    continue;
-                }
-                var errorFieldValue = error.get(errorField);
-                if (errorFieldValue == null) {
-                    continue;
-                }
-                if (errorFieldValue.asText().contains(substring)) {
-                    matchedString = substring;
-                    return true;
-                }
+            var errorFieldValue = error.get(errorField);
+            if (errorFieldValue == null) {
+                continue;
             }
-        } catch (Exception ignored) {
+            if (errorFieldValue.asText().contains(substring)) {
+                setMatchedEvidence(substring);
+                return true;
+            }
         }
         return false;
+    }
+
+    /**
+     * Sets the matched evidence and captures the current message. This ensures that when an alert
+     * is raised, the evidence is always from the associated message.
+     *
+     * @param evidence the matched string to use as evidence
+     */
+    private void setMatchedEvidence(String evidence) {
+        matchedString = evidence;
+        matchedMessage = lastQueryMsg;
+    }
+
+    /**
+     * Parses the last query response body as JSON and returns the root node.
+     *
+     * @return the root JsonNode, or null if parsing fails or response is not JSON
+     */
+    private JsonNode getResponseJson() {
+        if (lastQueryMsg == null || !lastQueryMsg.getResponseHeader().isJson()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.readValue(
+                    lastQueryMsg.getResponseBody().toString(), JsonNode.class);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Parses the last query response body as JSON and returns a specific field.
+     *
+     * @param fieldName the name of the field to retrieve from the root JSON object
+     * @return the JsonNode for the specified field, or null if parsing fails or field doesn't exist
+     */
+    private JsonNode getResponseJsonField(String fieldName) {
+        JsonNode root = getResponseJson();
+        return root != null ? root.get(fieldName) : null;
     }
 
     static Alert.Builder createFingerprintingAlert(
@@ -198,10 +227,14 @@ public class GraphQlFingerprinter {
             return;
         }
 
+        // Use matchedMessage if available (it was captured when evidence was set),
+        // otherwise fall back to lastQueryMsg for backward compatibility
+        HttpMessage alertMessage = matchedMessage != null ? matchedMessage : lastQueryMsg;
+
         Alert alert =
                 createFingerprintingAlert(discoveredGraphQlEngine)
                         .setEvidence(matchedString)
-                        .setMessage(lastQueryMsg)
+                        .setMessage(alertMessage)
                         .setUri(endpointUrl.toString())
                         .build();
         extAlert.alertFound(alert, null);
@@ -218,26 +251,49 @@ public class GraphQlFingerprinter {
     }
 
     private boolean checkApolloEngine() {
+        int apolloScore = 0;
+
+        // Test 1: Check for Apollo-specific directive error format
         sendQuery("query @skip {__typename}");
         if (errorContains(
                 "Directive \"@skip\" argument \"if\" of type \"Boolean!\" is required, but it was not provided.")) {
-            return true;
+            apolloScore++;
         }
+
+        // Test 2: Apollo-specific directive location error
         sendQuery("query @deprecated {__typename}");
-        return errorContains("Directive \"@deprecated\" may not be used on QUERY.");
+        if (errorContains("Directive \"@deprecated\" may not be used on QUERY.")) {
+            apolloScore++;
+        }
+
+        // Test 3: Apollo Server often includes extensions in responses
+        if (apolloScore >= 1) {
+            sendQuery("query { __typename }");
+            JsonNode extensions = getResponseJsonField("extensions");
+
+            // Apollo Server often includes tracing or cache hints
+            if (extensions != null && extensions.isObject()) {
+                if (extensions.has("tracing")) {
+                    setMatchedEvidence("tracing");
+                    return true;
+                }
+                if (extensions.has("cacheControl")) {
+                    setMatchedEvidence("cacheControl");
+                    return true;
+                }
+            }
+        }
+        // Require at least 2 Apollo indicators to reduce false positives
+        return apolloScore >= 2;
     }
 
     private boolean checkAriadneEngine() {
         sendQuery("{__typename @abc}");
         if (errorContains("Unknown directive '@abc'.")) {
-            try {
-                String response = lastQueryMsg.getResponseBody().toString();
-                JsonNode data = OBJECT_MAPPER.readValue(response, JsonNode.class).get("data");
-                if (data == null) {
-                    matchedString = null;
-                    return true;
-                }
-            } catch (Exception ignored) {
+            JsonNode data = getResponseJsonField("data");
+            if (data == null) {
+                setMatchedEvidence(null);
+                return true;
             }
         }
         sendQuery("");
@@ -245,8 +301,36 @@ public class GraphQlFingerprinter {
     }
 
     private boolean checkAwsAppSyncEngine() {
+        // Send a query that will trigger an error response
         sendQuery("query @skip {__typename}");
-        return errorContains("MisplacedDirective");
+
+        if (lastQueryMsg == null) {
+            return false;
+        }
+
+        // Check for AWS-specific response header (very reliable indicator)
+        String amznRequestId = lastQueryMsg.getResponseHeader().getHeader("x-amzn-requestid");
+        if (amznRequestId != null && !amznRequestId.isEmpty()) {
+            setMatchedEvidence("x-amzn-requestid");
+            return true;
+        }
+
+        // Check for AppSync-specific errorType field in errors
+        // AppSync uses "errorType" directly in error objects, which is non-standard
+        // Vanilla graphql-java uses extensions.classification instead
+        JsonNode errors = getResponseJsonField("errors");
+        if (errors != null && errors.isArray() && !errors.isEmpty()) {
+            JsonNode error = errors.get(0);
+            if (error != null && error.has("errorType")) {
+                String errorType = error.get("errorType").asText();
+                if (errorType != null && !errorType.isEmpty()) {
+                    setMatchedEvidence(errorType);
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private boolean checkCalibanEngine() {
@@ -256,17 +340,11 @@ public class GraphQlFingerprinter {
 
     private boolean checkDgraphEngine() {
         sendQuery("{__typename @cascade}");
-        if (lastQueryMsg != null && lastQueryMsg.getResponseHeader().isJson()) {
-            try {
-                String response = lastQueryMsg.getResponseBody().toString();
-                JsonNode data = OBJECT_MAPPER.readValue(response, JsonNode.class).get("data");
-                if (data != null && data.isObject()) {
-                    if (data.has("__typename") && "Query".equals(data.get("__typename").asText())) {
-                        matchedString = "Query";
-                        return true;
-                    }
-                }
-            } catch (Exception ignored) {
+        JsonNode data = getResponseJsonField("data");
+        if (data != null && data.isObject()) {
+            if (data.has("__typename") && "Query".equals(data.get("__typename").asText())) {
+                setMatchedEvidence("Query");
+                return true;
             }
         }
         sendQuery("{__typename}");
@@ -280,33 +358,22 @@ public class GraphQlFingerprinter {
     }
 
     private boolean checkDirectusEngine() {
-        try {
-            sendQuery("");
-            if (lastQueryMsg == null || !lastQueryMsg.getResponseHeader().isJson()) {
-                return false;
-            }
-            String response = lastQueryMsg.getResponseBody().toString();
-            JsonNode errors = OBJECT_MAPPER.readValue(response, JsonNode.class).get("errors");
-            if (errors == null || !errors.isArray()) {
-                return false;
-            }
-            if (errors.size() == 0) {
-                return false;
-            }
-            var error = errors.get(0);
-            if (error == null || !error.isObject()) {
-                return false;
-            }
-            JsonNode extensions = error.get("extensions");
-            if (extensions == null || !extensions.isObject()) {
-                return false;
-            }
-            if (extensions.has("code")
-                    && "INVALID_PAYLOAD".equals(extensions.get("code").asText())) {
-                matchedString = "INVALID_PAYLOAD";
-                return true;
-            }
-        } catch (Exception ignored) {
+        sendQuery("");
+        JsonNode errors = getResponseJsonField("errors");
+        if (errors == null || !errors.isArray() || errors.isEmpty()) {
+            return false;
+        }
+        var error = errors.get(0);
+        if (error == null || !error.isObject()) {
+            return false;
+        }
+        JsonNode extensions = error.get("extensions");
+        if (extensions == null || !extensions.isObject()) {
+            return false;
+        }
+        if (extensions.has("code") && "INVALID_PAYLOAD".equals(extensions.get("code").asText())) {
+            setMatchedEvidence("INVALID_PAYLOAD");
+            return true;
         }
         return false;
     }
@@ -332,17 +399,11 @@ public class GraphQlFingerprinter {
 
     private boolean checkGraphQlByPopEngine() {
         sendQuery("{alias1$1:__typename}");
-        if (lastQueryMsg != null && lastQueryMsg.getResponseHeader().isJson()) {
-            try {
-                String response = lastQueryMsg.getResponseBody().toString();
-                JsonNode data = OBJECT_MAPPER.readValue(response, JsonNode.class).get("data");
-                if (data != null && data.isObject()) {
-                    if (data.has("alias1$1") && "QueryRoot".equals(data.get("alias1$1").asText())) {
-                        matchedString = "QueryRoot";
-                        return true;
-                    }
-                }
-            } catch (Exception ignored) {
+        JsonNode data = getResponseJsonField("data");
+        if (data != null && data.isObject()) {
+            if (data.has("alias1$1") && "QueryRoot".equals(data.get("alias1$1").asText())) {
+                setMatchedEvidence("QueryRoot");
+                return true;
             }
         }
         sendQuery("query aa#aa {__typename}");
@@ -376,16 +437,12 @@ public class GraphQlFingerprinter {
             return true;
         }
         sendQuery("{__typename}");
-        try {
-            String response = lastQueryMsg.getResponseBody().toString();
-            JsonNode data = OBJECT_MAPPER.readValue(response, JsonNode.class).get("data");
-            if (data != null && data.isObject()) {
-                if (data.has("__typename") && "RootQuery".equals(data.get("__typename").asText())) {
-                    matchedString = "RootQuery";
-                    return true;
-                }
+        JsonNode data = getResponseJsonField("data");
+        if (data != null && data.isObject()) {
+            if (data.has("__typename") && "RootQuery".equals(data.get("__typename").asText())) {
+                setMatchedEvidence("RootQuery");
+                return true;
             }
-        } catch (Exception ignored) {
         }
         return false;
     }
@@ -429,25 +486,18 @@ public class GraphQlFingerprinter {
     }
 
     private boolean checkGraphQlYogaEngine() {
+        // Yoga-specific subscription error (v2+)
         sendQuery("subscription {__typename}");
-        return errorContains("asyncExecutionResult[Symbol.asyncIterator] is not a function")
-                || errorContains("Unexpected error.");
+        return errorContains("asyncExecutionResult[Symbol.asyncIterator] is not a function");
     }
 
     private boolean checkHasuraEngine() {
         sendQuery("query @cached {__typename}");
-        if (lastQueryMsg != null && lastQueryMsg.getResponseHeader().isJson()) {
-            try {
-                String response = lastQueryMsg.getResponseBody().toString();
-                JsonNode data = OBJECT_MAPPER.readValue(response, JsonNode.class).get("data");
-                if (data != null && data.isObject()) {
-                    if (data.has("__typename")
-                            && "query_root".equals(data.get("__typename").asText())) {
-                        matchedString = "query_root";
-                        return true;
-                    }
-                }
-            } catch (Exception ignored) {
+        JsonNode data = getResponseJsonField("data");
+        if (data != null && data.isObject()) {
+            if (data.has("__typename") && "query_root".equals(data.get("__typename").asText())) {
+                setMatchedEvidence("query_root");
+                return true;
             }
         }
         sendQuery("{zaproxy}");
@@ -485,16 +535,10 @@ public class GraphQlFingerprinter {
     private boolean checkInigoEngine() {
         // https://github.com/dolevf/graphw00f/commit/52e25d376f5fd4dcad062ba79a1b6c3e5e1c68dc
         sendQuery("query {__typename}");
-        if (lastQueryMsg != null && lastQueryMsg.getResponseHeader().isJson()) {
-            try {
-                String response = lastQueryMsg.getResponseBody().toString();
-                JsonNode exts = OBJECT_MAPPER.readValue(response, JsonNode.class).get("extensions");
-                if (exts != null && exts.isObject() && exts.has("inigo")) {
-                    matchedString = "inigo";
-                    return true;
-                }
-            } catch (Exception ignored) {
-            }
+        JsonNode exts = getResponseJsonField("extensions");
+        if (exts != null && exts.isObject() && exts.has("inigo")) {
+            setMatchedEvidence("inigo");
+            return true;
         }
         return false;
     }
@@ -519,8 +563,77 @@ public class GraphQlFingerprinter {
     }
 
     private boolean checkLighthouseEngine() {
+        // Test 1: Lighthouse's specific bug with boolean variable validation
         sendQuery("{__typename @include(if: falsee)}");
-        return errorContains("Internal server error") || errorContains("internal", "category");
+
+        boolean hasInternalError = errorContains("Internal server error");
+
+        if (!hasInternalError) {
+            return false;
+        }
+
+        // Test 2: Lighthouse (Laravel) includes category in extensions
+        // Check for errors[].extensions.category = "internal"
+        boolean hasInternalCategory = false;
+        JsonNode errors = getResponseJsonField("errors");
+
+        if (errors != null && errors.isArray() && !errors.isEmpty()) {
+            JsonNode firstError = errors.get(0);
+            JsonNode extensions = firstError.get("extensions");
+
+            if (extensions != null && extensions.isObject()) {
+                // Lighthouse includes 'category' field in extensions
+                if (extensions.has("category")
+                        && "internal".equals(extensions.get("category").asText())) {
+                    hasInternalCategory = true;
+
+                    // Additional Lighthouse indicators add more confidence
+                    // Use actual content from response as evidence
+                    if (extensions.has("trace")) {
+                        setMatchedEvidence("trace");
+                        return true;
+                    }
+                    if (extensions.has("file")) {
+                        setMatchedEvidence("file");
+                        return true;
+                    }
+                    // Has category internal in extensions, which is fairly specific
+                    setMatchedEvidence("internal");
+                    return true;
+                }
+            }
+        }
+
+        // If we have internal error but no category, do additional checks
+        if (hasInternalError && !hasInternalCategory) {
+            // Test 3: Lighthouse-specific directive handling
+            sendQuery("query @guard(with: \"api\") { __typename }");
+            if (errorContains("Directive \"@guard\" may not be used on QUERY")
+                    || errorContains("Unknown directive")) {
+                // Verify it's Lighthouse by checking error structure
+                JsonNode guardErrors = getResponseJsonField("errors");
+                if (guardErrors != null && guardErrors.isArray() && !guardErrors.isEmpty()) {
+                    // Lighthouse errors have specific structure
+                    JsonNode error = guardErrors.get(0);
+                    if (error.has("extensions") && error.has("message") && error.has("locations")) {
+                        // Use the actual error message as evidence
+                        setMatchedEvidence(error.get("message").asText());
+                        return true;
+                    }
+                }
+            }
+
+            // Test 4: Lighthouse-specific validation error format
+            sendQuery("query { __typename __typename }");
+            if (errorContains(
+                    "Fields \"__typename\" conflict because they have differing arguments")) {
+                // errorContains already sets the evidence
+                return true;
+            }
+        }
+
+        // Only accept if we found the category field in extensions
+        return hasInternalCategory;
     }
 
     private boolean checkMercuriusEngine() {
@@ -540,35 +653,42 @@ public class GraphQlFingerprinter {
     }
 
     private boolean checkSangriaEngine() {
-        try {
-            sendQuery("queryy {__typename}");
-            if (lastQueryMsg == null || !lastQueryMsg.getResponseHeader().isJson()) {
-                return false;
-            }
-            String response = lastQueryMsg.getResponseBody().toString();
-            JsonNode syntaxError =
-                    OBJECT_MAPPER.readValue(response, JsonNode.class).get("syntaxError");
-            if (syntaxError == null || !syntaxError.isValueNode()) {
-                return false;
-            }
-            String expectedError =
-                    "Syntax error while parsing GraphQL query. Invalid input \"queryy\", expected ExecutableDefinition or TypeSystemDefinition";
-            if (syntaxError.asText().contains(expectedError)) {
-                matchedString = expectedError;
-                return true;
-            }
-        } catch (Exception ignored) {
+        sendQuery("queryy {__typename}");
+        JsonNode syntaxError = getResponseJsonField("syntaxError");
+        if (syntaxError == null || !syntaxError.isValueNode()) {
+            return false;
+        }
+        String expectedError =
+                "Syntax error while parsing GraphQL query. Invalid input \"queryy\", expected ExecutableDefinition or TypeSystemDefinition";
+        if (syntaxError.asText().contains(expectedError)) {
+            setMatchedEvidence(expectedError);
+            return true;
         }
         return false;
     }
 
     private boolean checkStrawberryEngine() {
         sendQuery("query @deprecated {__typename}");
-        String response = lastQueryMsg.getResponseBody().toString();
-        try {
-            return errorContains("Directive '@deprecated' may not be used on query.")
-                    && OBJECT_MAPPER.readValue(response, JsonNode.class).has("data");
-        } catch (JsonProcessingException ignore) {
+        if (!errorContains("Directive '@deprecated' may not be used on query.")) {
+            return false;
+        }
+
+        // Strawberry returns both error and data field
+        JsonNode root = getResponseJson();
+        if (root == null) {
+            return false;
+        }
+
+        // Must have both errors and data (Strawberry-specific behavior)
+        if (!root.has("data")) {
+            return false;
+        }
+
+        // Verify we have errors array
+        JsonNode errors = root.get("errors");
+        if (errors != null && errors.isArray() && !errors.isEmpty()) {
+            setMatchedEvidence("Directive '@deprecated' may not be used on query.");
+            return true;
         }
         return false;
     }
@@ -579,25 +699,40 @@ public class GraphQlFingerprinter {
     }
 
     private boolean checkTartifletteEngine() {
+        // Check 1: The known typo (for older versions)
         sendQuery("query @doesnotexist {__typename}");
         // https://github.com/tartiflette/tartiflette/blob/421c1e937f553d6a5bf2f30154022c0d77053cfb/tartiflette/language/validators/query/directives_are_defined.py#L22
         if (errorContains("Unknow Directive < @doesnotexist >.")) {
             return true;
         }
+        // Check 2: Fallback for if they fix the typo
+        if (errorContains("Unknown Directive < @doesnotexist >.")) {
+            return true;
+        }
+
+        // Check 3: Tartiflette-specific error format with angle brackets
         sendQuery("query @skip {__typename}");
         if (errorContains("Missing mandatory argument < if > in directive < @skip >.")) {
             return true;
         }
+
+        // Check 4: Tartiflette's unique field error format
         sendQuery("{zaproxy}");
         if (errorContains("Field zaproxy doesn't exist on Query")) {
             return true;
         }
-        sendQuery("{__typename @deprecated}");
-        if (errorContains("Directive < @deprecated > is not used in a valid location.")) {
+
+        // Check 5: Tartiflette's specific syntax error format
+        sendQuery("queryy {__typename}");
+        if (errorContains("syntax error, unexpected IDENTIFIER")) {
+            // Accept the syntax error as it's fairly specific to Tartiflette
+            // The specific format "syntax error, unexpected IDENTIFIER" is characteristic
             return true;
         }
-        sendQuery("queryy {__typename}");
-        return errorContains("syntax error, unexpected IDENTIFIER");
+
+        // Check 6: Unique location error format
+        sendQuery("{__typename @deprecated}");
+        return errorContains("Directive < @deprecated > is not used in a valid location.");
     }
 
     private boolean checkWpGraphQlEngine() {
@@ -610,33 +745,25 @@ public class GraphQlFingerprinter {
         if (!errorContains("Syntax Error: Expected Name, found $")) {
             return false;
         }
-        try {
-            String response = lastQueryMsg.getResponseBody().toString();
-            JsonNode extensions =
-                    OBJECT_MAPPER.readValue(response, JsonNode.class).get("extensions");
-            if (extensions != null && extensions.isObject()) {
-                JsonNode debug = extensions.get("debug");
-                if (debug != null && debug.isArray()) {
-                    if (!debug.isEmpty()) {
-                        var debugObject = debug.get(0);
-                        String expectedDebugType = "DEBUG_LOGS_INACTIVE";
-                        if (debugObject.has("type")
-                                && expectedDebugType.equals(debugObject.get("type").asText())) {
-                            matchedString = expectedDebugType;
-                            return true;
-                        }
-                        String expectedDebugMessage =
-                                "GraphQL Debug logging is not active. To see debug logs, GRAPHQL_DEBUG must be enabled.";
-                        if (debugObject.has("message")
-                                && expectedDebugMessage.equals(
-                                        debugObject.get("message").asText())) {
-                            matchedString = expectedDebugMessage;
-                            return true;
-                        }
-                    }
+        JsonNode extensions = getResponseJsonField("extensions");
+        if (extensions != null && extensions.isObject()) {
+            JsonNode debug = extensions.get("debug");
+            if (debug != null && debug.isArray() && !debug.isEmpty()) {
+                var debugObject = debug.get(0);
+                String expectedDebugType = "DEBUG_LOGS_INACTIVE";
+                if (debugObject.has("type")
+                        && expectedDebugType.equals(debugObject.get("type").asText())) {
+                    setMatchedEvidence(expectedDebugType);
+                    return true;
+                }
+                String expectedDebugMessage =
+                        "GraphQL Debug logging is not active. To see debug logs, GRAPHQL_DEBUG must be enabled.";
+                if (debugObject.has("message")
+                        && expectedDebugMessage.equals(debugObject.get("message").asText())) {
+                    setMatchedEvidence(expectedDebugMessage);
+                    return true;
                 }
             }
-        } catch (Exception ignored) {
         }
         return false;
     }
