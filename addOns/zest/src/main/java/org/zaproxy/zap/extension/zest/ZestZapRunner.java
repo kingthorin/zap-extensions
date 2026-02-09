@@ -159,17 +159,15 @@ public class ZestZapRunner extends ZestBasicRunner implements ScannerListener {
             // Prompt for them
             params = extension.getDialogManager().showRunScriptDialog(this, script, params);
             return "";
-        } else {
-            this.target = null;
-            if (wrapper.getWriter() != null) {
-                super.setOutputWriter(wrapper.getWriter());
-            } else if (scriptUI != null && !hasOutputWriter()) {
-                super.setOutputWriter(scriptUI.getOutputWriter());
-            }
-            this.setDebug(this.wrapper.isDebug());
-
-            return super.run(script, params);
         }
+        this.target = null;
+        if (wrapper.getWriter() != null) {
+            super.setOutputWriter(wrapper.getWriter());
+        } else if (scriptUI != null && !hasOutputWriter()) {
+            super.setOutputWriter(scriptUI.getOutputWriter());
+        }
+        this.setDebug(this.wrapper.isDebug());
+        return super.run(script, params);
     }
 
     private boolean hasOutputWriter() {
@@ -199,8 +197,7 @@ public class ZestZapRunner extends ZestBasicRunner implements ScannerListener {
             super.setOutputWriter(scriptUI.getOutputWriter());
         }
         this.setDebug(this.wrapper.isDebug());
-        String result = super.run(script, target, params);
-        return result;
+        return super.run(script, target, params);
     }
 
     public void stop() {
@@ -308,6 +305,11 @@ public class ZestZapRunner extends ZestBasicRunner implements ScannerListener {
                     ZestAssignFailException,
                     ZestClientFailException {
         LOGGER.debug("runStatement {}", stmt.getElementType());
+        LOGGER.debug(
+                "Executing statement: index={}, type={}, enabled={}",
+                stmt.getIndex(),
+                stmt.getElementType(),
+                stmt.isEnabled());
         while (this.isPaused() && !this.isStop) {
             try {
                 Thread.sleep(200);

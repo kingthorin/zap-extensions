@@ -20,14 +20,17 @@
 package org.zaproxy.zap.extension.scripts.automation.actions;
 
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.security.InvalidParameterException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+
 import org.apache.commons.httpclient.URI;
 import org.apache.commons.lang3.StringUtils;
 import org.parosproxy.paros.Constant;
+import org.parosproxy.paros.control.Control;
 import org.parosproxy.paros.model.Model;
 import org.parosproxy.paros.model.SiteNode;
 import org.parosproxy.paros.network.HttpMessage;
@@ -45,6 +48,8 @@ public class RunScriptAction extends ScriptAction {
 
     public static final String NAME = "run";
     private static final String ZEST_ENGINE_NAME = "Mozilla Zest";
+    private static final String EXTENSION_ZEST_NAME = "ExtensionZest";
+    private static final String RUN_NAME_CHAIN_PREFIX = "chain_";
     private static final List<String> SCRIPT_TYPES =
             Arrays.asList(ExtensionScript.TYPE_STANDALONE, ExtensionScript.TYPE_TARGETED);
     private static final List<String> DISABLED_FIELDS =
@@ -77,10 +82,31 @@ public class RunScriptAction extends ScriptAction {
         String issue;
         String scriptType = params.getType();
 
-        if (StringUtils.isEmpty(params.getName())) {
+        boolean hasName = StringUtils.isNotEmpty(params.getName());
+        boolean hasChain = params.getChain() != null && !params.getChain().isEmpty();
+
+        if (hasName && hasChain) {
+            issue =
+                    Constant.messages.getString(
+                            "scripts.automation.warn.chainAndNameBothSpecified", jobName);
+            list.add(issue);
+            if (progress != null) {
+                progress.warn(issue);
+            }
+        } else if (!hasName && !hasChain) {
             issue =
                     Constant.messages.getString(
                             "scripts.automation.error.scriptNameIsNull", jobName);
+            list.add(issue);
+            if (progress != null) {
+                progress.error(issue);
+            }
+        }
+
+        if (hasChain && !ExtensionScript.TYPE_STANDALONE.equals(scriptType)) {
+            issue =
+                    Constant.messages.getString(
+                            "scripts.automation.error.chainRequiresStandalone", jobName);
             list.add(issue);
             if (progress != null) {
                 progress.error(issue);
@@ -108,7 +134,7 @@ public class RunScriptAction extends ScriptAction {
                 progress.error(issue);
             }
         }
-        // Note dont warn/error if script not currently in ZAP - it might be added by another job
+        // Script/chain existence not validated here; chain validated at runtime in runScriptChain()
         if (!StringUtils.isEmpty(params.getSource())) {
             issue =
                     Constant.messages.getString(
@@ -192,61 +218,165 @@ public class RunScriptAction extends ScriptAction {
             }
         }
 
+        if (parameters.getChain() != null && !parameters.getChain().isEmpty()) {
+            runScriptChain(jobName, user, progress);
+        } else {
+            runSingleScript(jobName, user, progress);
+        }
+    }
+
+    private void runScriptChain(String jobName, User user, AutomationProgress progress) {
+        if (!ExtensionScript.TYPE_STANDALONE.equals(parameters.getType())) {
+            progress.error(
+                    Constant.messages.getString(
+                            "scripts.automation.error.chainRequiresStandalone", jobName));
+            return;
+        }
+
+        List<ScriptWrapper> scriptWrappers =
+                validateChainScripts(parameters.getChain(), jobName, progress);
+        if (scriptWrappers == null) {
+            return; // Validation failed, error already reported
+        }
+
+        if (scriptWrappers.size() == 1) {
+            runSingleScript(jobName, user, progress, scriptWrappers.get(0));
+            return;
+        }
+
+        ScriptWrapper firstScript = scriptWrappers.get(0);
+        String runName = RUN_NAME_CHAIN_PREFIX + firstScript.getName();
+        ScriptWrapper runnable = getRunnableForChainViaReflection(scriptWrappers, runName);
+        if (runnable == null) {
+            progress.error(
+                    Constant.messages.getString(
+                            "scripts.automation.error.chainReflectionFailed",
+                            jobName,
+                            firstScript.getName()));
+            return;
+        }
+
+        setUserOnZestWrapper(runnable, user);
+
+        progress.info(
+                Constant.messages.getString(
+                        "scripts.automation.info.chainExecutingMerged", scriptWrappers.size()));
+
+        boolean success =
+                executeScriptWithOutputListener(
+                        runnable,
+                        progress,
+                        () -> extScript.invokeScript(runnable),
+                        (e) ->
+                                progress.error(
+                                        Constant.messages.getString(
+                                                "scripts.automation.error.chainExecutionFailed",
+                                                jobName,
+                                                e.getMessage())));
+
+        if (success) {
+            progress.info(Constant.messages.getString("scripts.automation.info.chainCompleted"));
+        }
+    }
+
+    private void runSingleScript(String jobName, User user, AutomationProgress progress) {
+        ScriptWrapper script = findScript();
+        if (script == null) {
+            progress.error(
+                    Constant.messages.getString(
+                            "scripts.automation.error.scriptNameNotFound",
+                            jobName,
+                            parameters.getName()));
+            return;
+        }
+
+        if (!getSupportedScriptTypes().contains(script.getTypeName())) {
+            progress.error(
+                    Constant.messages.getString(
+                            "scripts.automation.error.scriptTypeNotSupported",
+                            jobName,
+                            script.getTypeName(),
+                            getName(),
+                            String.join(", ", getSupportedScriptTypes())));
+            return;
+        }
+
+        if (parameters.getType().equals(ExtensionScript.TYPE_TARGETED)) {
+            executeScriptWithOutputListener(
+                    script,
+                    progress,
+                    () -> {
+                        URI targetUri = new URI(parameters.getTarget(), true);
+                        SiteNode siteNode =
+                                Model.getSingleton().getSession().getSiteTree().findNode(targetUri);
+                        if (siteNode == null) {
+                            progress.error(
+                                    Constant.messages.getString(
+                                            "scripts.automation.error.scriptTargetNotFound",
+                                            jobName,
+                                            parameters.getTarget()));
+                            return;
+                        }
+
+                        HttpMessage httpMessage = siteNode.getHistoryReference().getHttpMessage();
+                        extScript.invokeTargetedScript(script, httpMessage);
+                    },
+                    (e) -> reportScriptError(progress, jobName, parameters, e));
+        } else {
+            runSingleScript(jobName, user, progress, script);
+        }
+    }
+
+    /** Runs one standalone script (non-targeted or single-item chain). */
+    private void runSingleScript(
+            String jobName, User user, AutomationProgress progress, ScriptWrapper script) {
+        setUserOnZestWrapper(script, user);
+        executeScriptWithOutputListener(
+                script,
+                progress,
+                () -> extScript.invokeScript(script),
+                (e) -> reportScriptError(progress, jobName, parameters, e));
+    }
+
+    /**
+     * Runs the script with output listener setup/teardown and error handling.
+     *
+     * @param script the script to execute
+     * @param progress the automation progress for output
+     * @param executor the script execution logic
+     * @param errorHandler the error handler for exceptions
+     * @return true if execution succeeded, false otherwise
+     */
+    private boolean executeScriptWithOutputListener(
+            ScriptWrapper script,
+            AutomationProgress progress,
+            ScriptExecutor executor,
+            java.util.function.Consumer<Exception> errorHandler) {
         ScriptJobOutputListener scriptJobOutputListener =
-                new ScriptJobOutputListener(progress, parameters.getName());
+                new ScriptJobOutputListener(progress, script.getName());
         try {
             extScript.addScriptOutputListener(scriptJobOutputListener);
-            ScriptWrapper script = findScript();
-            if (script == null) {
-                progress.error(
-                        Constant.messages.getString(
-                                "scripts.automation.error.scriptNameNotFound",
-                                jobName,
-                                parameters.getName()));
-                return;
-            }
-
-            if (!getSupportedScriptTypes().contains(script.getTypeName())) {
-                progress.error(
-                        Constant.messages.getString(
-                                "scripts.automation.error.scriptTypeNotSupported",
-                                jobName,
-                                script.getTypeName(),
-                                getName(),
-                                String.join(", ", getSupportedScriptTypes())));
-                return;
-            }
-
-            if (parameters.getType().equals(ExtensionScript.TYPE_TARGETED)) {
-                URI targetUri = new URI(parameters.getTarget(), true);
-                SiteNode siteNode =
-                        Model.getSingleton().getSession().getSiteTree().findNode(targetUri);
-                if (siteNode == null) {
-                    progress.error(
-                            Constant.messages.getString(
-                                    "scripts.automation.error.scriptTargetNotFound",
-                                    jobName,
-                                    parameters.getTarget()));
-                    return;
-                }
-
-                HttpMessage httpMessage = siteNode.getHistoryReference().getHttpMessage();
-                extScript.invokeTargetedScript(script, httpMessage);
-            } else {
-                setUserOnZestWrapper(script, user);
-                extScript.invokeScript(script);
-            }
+            executor.execute();
             scriptJobOutputListener.flush();
 
             if (script.getLastException() != null) {
-                reportScriptError(progress, jobName, parameters, script.getLastException());
+                errorHandler.accept(script.getLastException());
+                return false;
             }
+            return true;
         } catch (Exception e) {
             LOGGER.error(e, e);
-            reportScriptError(progress, jobName, parameters, e);
+            errorHandler.accept(e);
+            return false;
         } finally {
             extScript.removeScriptOutputListener(scriptJobOutputListener);
         }
+    }
+
+    /** Script execution logic that may throw. */
+    @FunctionalInterface
+    private interface ScriptExecutor {
+        void execute() throws Exception;
     }
 
     private static void reportScriptError(
@@ -279,6 +409,108 @@ public class RunScriptAction extends ScriptAction {
                 | InvocationTargetException
                 | SecurityException e) {
             LOGGER.warn("Failed to set user on script wrapper", e);
+        }
+    }
+
+    /**
+     * Gets runnable for the chain from Zest via reflection. Returns null if Zest not loaded or call
+     * fails.
+     *
+     * @param scriptWrappers validated chain in order
+     * @param runName name for the run
+     * @return script to invoke for the chain, or null
+     */
+    private ScriptWrapper getRunnableForChainViaReflection(
+            List<ScriptWrapper> scriptWrappers, String runName) {
+        try {
+            Object extZest =
+                    Control.getSingleton().getExtensionLoader().getExtension(EXTENSION_ZEST_NAME);
+            if (extZest == null) {
+                LOGGER.warn("ExtensionZest not loaded, cannot get runnable for chain");
+                return null;
+            }
+            Method getRunnable =
+                    extZest.getClass().getMethod("getRunnableForChain", List.class, String.class);
+            return (ScriptWrapper) getRunnable.invoke(extZest, scriptWrappers, runName);
+        } catch (NoSuchMethodException
+                | IllegalAccessException
+                | InvocationTargetException
+                | SecurityException e) {
+            LOGGER.warn("Failed to get runnable for chain via ExtensionZest", e);
+            return null;
+        }
+    }
+
+    /**
+     * Validates chain scripts and returns their wrappers.
+     *
+     * @param chain script names in order
+     * @param jobName for error messages
+     * @param progress for error reporting
+     * @return validated ScriptWrappers, or null if validation failed
+     */
+    private List<ScriptWrapper> validateChainScripts(
+            List<String> chain, String jobName, AutomationProgress progress) {
+        List<ScriptWrapper> scriptWrappers = new ArrayList<>();
+
+        for (String scriptName : chain) {
+            ScriptWrapper script = extScript.getScript(scriptName);
+            if (script == null) {
+                progress.error(
+                        Constant.messages.getString(
+                                "scripts.automation.error.chainScriptNotFound",
+                                jobName,
+                                scriptName));
+                return null;
+            }
+
+            if (!ExtensionScript.TYPE_STANDALONE.equals(script.getTypeName())) {
+                progress.error(
+                        Constant.messages.getString(
+                                "scripts.automation.error.chainScriptNotZestStandalone",
+                                jobName,
+                                scriptName));
+                return null;
+            }
+
+            if (!ZEST_ENGINE_NAME.equals(script.getEngineName())) {
+                progress.error(
+                        Constant.messages.getString(
+                                "scripts.automation.error.chainScriptNotZestScript",
+                                jobName,
+                                scriptName));
+                return null;
+            }
+
+            if (!hasGetZestScriptMethod(script)) {
+                progress.error(
+                        Constant.messages.getString(
+                                "scripts.automation.error.chainScriptMissingMethods",
+                                jobName,
+                                scriptName));
+                return null;
+            }
+
+            scriptWrappers.add(script);
+        }
+
+        return scriptWrappers;
+    }
+
+    /**
+     * Returns true if the script has getZestScript (required for Zest merge).
+     *
+     * @param script the script to check
+     * @return true if getZestScript is present
+     */
+    private boolean hasGetZestScriptMethod(ScriptWrapper script) {
+        try {
+            script.getClass().getMethod("getZestScript");
+            return true;
+        } catch (NoSuchMethodException e) {
+            LOGGER.debug(
+                    "Script {} does not have getZestScript: {}", script.getName(), e.getMessage());
+            return false;
         }
     }
 }

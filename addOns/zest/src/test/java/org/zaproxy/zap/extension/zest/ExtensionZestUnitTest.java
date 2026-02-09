@@ -25,6 +25,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -55,6 +56,10 @@ import org.zaproxy.zap.extension.script.ExtensionScript;
 import org.zaproxy.zap.extension.script.ScriptType;
 import org.zaproxy.zap.extension.script.ScriptWrapper;
 import org.zaproxy.zap.utils.ZapXmlConfiguration;
+import org.zaproxy.zest.core.v1.ZestComment;
+import org.zaproxy.zest.core.v1.ZestJSON;
+import org.zaproxy.zest.core.v1.ZestScript;
+import org.zaproxy.zest.core.v1.ZestStatement;
 
 /** Unit test for {@link ExtensionZest}. */
 class ExtensionZestUnitTest {
@@ -273,6 +278,96 @@ class ExtensionZestUnitTest {
         private void globalOptionIncludeResponsesAs(boolean value) {
             extension.getParam().load(new ZapXmlConfiguration());
             extension.getParam().setIncludeResponses(value);
+        }
+    }
+
+    @Nested
+    class GetRunnableForChain {
+
+        @BeforeEach
+        void setup() {
+            var extLoader = mock(ExtensionLoader.class);
+            Control.initSingletonForTesting(mock(Model.class), extLoader);
+            given(extLoader.getExtension(ExtensionZest.NAME)).willReturn(extension);
+            given(extLoader.getExtension(ExtensionZest.class)).willReturn(extension);
+        }
+
+        @Test
+        void shouldThrowForNullScriptsList() {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> extension.getRunnableForChain(null, "runName"));
+            assertThat(e.getMessage(), containsString("must not be null or empty"));
+        }
+
+        @Test
+        void shouldThrowForEmptyScriptsList() {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> extension.getRunnableForChain(List.of(), "runName"));
+            assertThat(e.getMessage(), containsString("must not be null or empty"));
+        }
+
+        @Test
+        void shouldThrowWhenScriptNotZestScriptWrapper() {
+            ScriptWrapper plainWrapper = mock(ScriptWrapper.class);
+            given(plainWrapper.getName()).willReturn("plain");
+
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> extension.getRunnableForChain(List.of(plainWrapper), "runName"));
+            assertThat(e.getMessage(), containsString("ZestScriptWrapper"));
+            assertThat(e.getMessage(), containsString("plain"));
+        }
+
+        @Test
+        void shouldReturnMergedWrapperForValidChain() {
+            // Given
+            ZestScriptWrapper wrapper1 = createZestWrapper("script1", 1);
+            ZestScriptWrapper wrapper2 = createZestWrapper("script2", 2);
+
+            // When
+            ScriptWrapper result =
+                    extension.getRunnableForChain(List.of(wrapper1, wrapper2), "merged");
+
+            // Then
+            assertThat(result, is(notNullValue()));
+            assertThat(result, is(org.hamcrest.Matchers.instanceOf(ZestScriptWrapper.class)));
+            ZestScript merged = ((ZestScriptWrapper) result).getZestScript();
+            assertThat(merged.getTitle(), is(equalTo("merged")));
+            assertThat(merged.getDescription(), containsString("Merged chain of 2 scripts"));
+            List<ZestStatement> statements = merged.getStatements();
+            long sectionComments =
+                    statements.stream()
+                            .filter(
+                                    s ->
+                                            s instanceof ZestComment
+                                                    && ((ZestComment) s)
+                                                            .getComment()
+                                                            .contains("=== START:"))
+                            .count();
+            assertThat(sectionComments, is(equalTo(2L)));
+        }
+
+        private ZestScriptWrapper createZestWrapper(String name, int statementCount) {
+            ZestScript script = new ZestScript();
+            script.setTitle(name);
+            script.setDescription("Test: " + name);
+            script.setType(ZestScript.Type.StandAlone);
+            for (int i = 0; i < statementCount; i++) {
+                script.add(new ZestComment("Statement " + (i + 1)));
+            }
+            String json = ZestJSON.toString(script);
+            ScriptWrapper sw = new ScriptWrapper();
+            sw.setName(name);
+            sw.setContents(json);
+            ScriptType scriptType = mock(ScriptType.class);
+            given(scriptType.getName()).willReturn(ExtensionScript.TYPE_STANDALONE);
+            sw.setType(scriptType);
+            return new ZestScriptWrapper(sw);
         }
     }
 }
