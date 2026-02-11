@@ -48,6 +48,8 @@ public class EncoderConfig {
     private static final String OUTPUT_PANEL_SCRIPT_KEY = "processorId";
     private static final String CONFIG_BASE = "addOnData/encoder/config/";
     private static final String CONFIG_FILE = CONFIG_BASE + "encoder-config.xml";
+    private static final String DIVIDER_LOCATION_KEY = "dividerLocation";
+    private static final double DEFAULT_DIVIDER_LOCATION = 0.25;
     private static final String DEFAULT_CONFIG_FILE_NAME = "encoder-default.xml";
     private static final String DEFAULT_CONFIG_FILE = CONFIG_BASE + DEFAULT_CONFIG_FILE_NAME;
     private static final String DEFAULT_BUNDLED_CONFIG_FILE =
@@ -122,10 +124,15 @@ public class EncoderConfig {
     }
 
     public static void saveConfig(List<TabModel> tabs) throws ConfigurationException, IOException {
-        saveConfig(getConfigPath(CONFIG_FILE), tabs);
+        saveConfig(tabs, null);
     }
 
-    private static void saveConfig(Path file, List<TabModel> tabs)
+    public static void saveConfig(List<TabModel> tabs, Double dividerLocation)
+            throws ConfigurationException, IOException {
+        saveConfig(getConfigPath(CONFIG_FILE), tabs, dividerLocation);
+    }
+
+    private static void saveConfig(Path file, List<TabModel> tabs, Double dividerLocation)
             throws ConfigurationException, IOException {
         ZapXmlConfiguration config = new ZapXmlConfiguration();
         int t = 0;
@@ -140,8 +147,29 @@ public class EncoderConfig {
                         elementPanelKey + OUTPUT_PANEL_SCRIPT_KEY, panel.getProcessorId());
             }
         }
+        if (dividerLocation != null) {
+            config.setProperty(DIVIDER_LOCATION_KEY, dividerLocation);
+        }
 
         Files.createDirectories(file.getParent());
         config.save(file.toFile());
+    }
+
+    public static double loadDividerLocation() {
+        Path config = getConfigPath(CONFIG_FILE);
+        if (Files.notExists(config)) {
+            return DEFAULT_DIVIDER_LOCATION;
+        }
+        try {
+            ZapXmlConfiguration xmlConfig = new ZapXmlConfiguration(config.toFile());
+            if (!xmlConfig.containsKey(DIVIDER_LOCATION_KEY)) {
+                return DEFAULT_DIVIDER_LOCATION;
+            }
+            double value = xmlConfig.getDouble(DIVIDER_LOCATION_KEY);
+            return value >= 0.0 && value <= 1.0 ? value : DEFAULT_DIVIDER_LOCATION;
+        } catch (ConfigurationException e) {
+            LOGGER.debug("Could not load divider location, using default.", e);
+            return DEFAULT_DIVIDER_LOCATION;
+        }
     }
 }

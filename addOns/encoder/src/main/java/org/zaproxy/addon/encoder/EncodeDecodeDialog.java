@@ -40,6 +40,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JToolBar;
 import javax.swing.ScrollPaneConstants;
@@ -86,6 +87,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
     private JButton deleteSelectedTabButton;
     private int globalOutputPanelIndex;
     private JButton resetButton;
+    private JSplitPane inputOutputSplitPane = null;
 
     public EncodeDecodeDialog(List<TabModel> tabModels) {
         super();
@@ -154,7 +156,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         setTabs(defaultTabModels);
 
         try {
-            EncoderConfig.saveConfig(tabs);
+            EncoderConfig.saveConfig(tabs, getDividerProportion());
         } catch (ConfigurationException | IOException e) {
             LOGGER.warn("There was a problem saving the encoder config.", e);
         }
@@ -489,24 +491,6 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             mainPanel.setPreferredSize(new Dimension(800, 600));
             mainPanel.setLayout(new GridBagLayout());
 
-            final GridBagConstraints gbcScrollPanel = new GridBagConstraints();
-            gbcScrollPanel.gridx = 0;
-            gbcScrollPanel.gridy = 1;
-            gbcScrollPanel.insets = new Insets(1, 1, 1, 1);
-            gbcScrollPanel.anchor = GridBagConstraints.NORTHWEST;
-            gbcScrollPanel.fill = GridBagConstraints.BOTH;
-            gbcScrollPanel.weightx = 1.0D;
-            gbcScrollPanel.weighty = 0.25D;
-
-            final GridBagConstraints gbcTabPanel = new GridBagConstraints();
-            gbcTabPanel.gridx = 0;
-            gbcTabPanel.gridy = 3;
-            gbcTabPanel.insets = new Insets(1, 1, 1, 1);
-            gbcTabPanel.anchor = GridBagConstraints.NORTHWEST;
-            gbcTabPanel.fill = GridBagConstraints.BOTH;
-            gbcTabPanel.weightx = 1.0D;
-            gbcTabPanel.weighty = 1.0D;
-
             final JScrollPane scrollPanelWithInputField = new JScrollPane();
             scrollPanelWithInputField.setViewportView(getInputField());
             scrollPanelWithInputField.setHorizontalScrollBarPolicy(
@@ -518,17 +502,43 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
                             TitledBorder.DEFAULT_JUSTIFICATION,
                             TitledBorder.DEFAULT_POSITION,
                             FontUtils.getFont(FontUtils.Size.standard)));
+            scrollPanelWithInputField.setMinimumSize(new Dimension(100, 80));
 
+            JPanel bottomPanel = new JPanel(new GridBagLayout());
             final GridBagConstraints gbcToolbar = new GridBagConstraints();
             gbcToolbar.gridx = 0;
-            gbcToolbar.gridy = 2;
+            gbcToolbar.gridy = 0;
             gbcToolbar.insets = new Insets(1, 1, 1, 1);
             gbcToolbar.anchor = GridBagConstraints.NORTHWEST;
             gbcToolbar.fill = GridBagConstraints.BOTH;
+            final GridBagConstraints gbcTabPanel = new GridBagConstraints();
+            gbcTabPanel.gridx = 0;
+            gbcTabPanel.gridy = 1;
+            gbcTabPanel.insets = new Insets(1, 1, 1, 1);
+            gbcTabPanel.anchor = GridBagConstraints.NORTHWEST;
+            gbcTabPanel.fill = GridBagConstraints.BOTH;
+            gbcTabPanel.weightx = 1.0D;
+            gbcTabPanel.weighty = 1.0D;
+            bottomPanel.add(getPanelToolbar(), gbcToolbar);
+            bottomPanel.add(getMainTabbedPane(), gbcTabPanel);
+            bottomPanel.setMinimumSize(new Dimension(100, 120));
 
-            mainPanel.add(scrollPanelWithInputField, gbcScrollPanel);
-            mainPanel.add(getPanelToolbar(), gbcToolbar);
-            mainPanel.add(getMainTabbedPane(), gbcTabPanel);
+            inputOutputSplitPane =
+                    new JSplitPane(
+                            JSplitPane.VERTICAL_SPLIT, scrollPanelWithInputField, bottomPanel);
+            inputOutputSplitPane.setResizeWeight(0.25);
+            inputOutputSplitPane.setDividerLocation(EncoderConfig.loadDividerLocation());
+            inputOutputSplitPane.setOneTouchExpandable(true);
+
+            final GridBagConstraints gbcSplit = new GridBagConstraints();
+            gbcSplit.gridx = 0;
+            gbcSplit.gridy = 0;
+            gbcSplit.insets = new Insets(1, 1, 1, 1);
+            gbcSplit.anchor = GridBagConstraints.NORTHWEST;
+            gbcSplit.fill = GridBagConstraints.BOTH;
+            gbcSplit.weightx = 1.0D;
+            gbcSplit.weighty = 1.0D;
+            mainPanel.add(inputOutputSplitPane, gbcSplit);
         }
         return mainPanel;
     }
@@ -665,10 +675,22 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
 
     private void saveSetting() {
         try {
-            EncoderConfig.saveConfig(tabs);
+            double dividerProportion = getDividerProportion();
+            EncoderConfig.saveConfig(tabs, dividerProportion);
         } catch (Exception e) {
             LOGGER.error("Can not store Encoder Config", e);
         }
+    }
+
+    private double getDividerProportion() {
+        if (inputOutputSplitPane == null) {
+            return EncoderConfig.loadDividerLocation();
+        }
+        int height = inputOutputSplitPane.getHeight() - inputOutputSplitPane.getDividerSize();
+        if (height <= 0) {
+            return EncoderConfig.loadDividerLocation();
+        }
+        return (double) inputOutputSplitPane.getDividerLocation() / height;
     }
 
     @Override
