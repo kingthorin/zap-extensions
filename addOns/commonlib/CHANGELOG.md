@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Update dependencies.
 - Use a monospaced font for the output panel.
+- Add OWASP Top 10 2025 and OWASP API Top 10 2023 Alert Tags.
 
 ## [1.39.0] - 2025-12-15
 ### Changed
