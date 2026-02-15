@@ -24,6 +24,8 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 
 import org.junit.jupiter.api.Test;
+import org.zaproxy.addon.encoder.OutputPanelContext;
+import org.zaproxy.addon.encoder.OutputPanelModel;
 import org.zaproxy.addon.encoder.processors.EncodeDecodeResult;
 
 class Md5HasherUnitTest extends ProcessorTests<Md5Hasher> {
@@ -46,6 +48,34 @@ class Md5HasherUnitTest extends ProcessorTests<Md5Hasher> {
     void shouldEncodeSimpleString() throws Exception {
         // Given / When
         EncodeDecodeResult result = processor.process("admin");
+        // Then
+        assertThat(result.hasError(), is(equalTo(false)));
+        assertThat(result.getResult(), is(equalTo("21232F297A57A5A743894A0E4A801FC3")));
+    }
+
+    @Test
+    void shouldUseContextLowercaseWhenContextProvided() throws Exception {
+        // Given
+        OutputPanelModel model = new OutputPanelModel();
+        model.setProcessorId("encoder.predefined.md5hash");
+        OutputPanelContext context = new OutputPanelContext(model, null, null);
+        context.setSetting(OutputPanelContext.KEY_HASHERS_LOWERCASE, true);
+        // When
+        EncodeDecodeResult result = processor.process("admin", context);
+        // Then
+        assertThat(result.hasError(), is(equalTo(false)));
+        assertThat(result.getResult(), is(equalTo("21232f297a57a5a743894a0e4a801fc3")));
+    }
+
+    @Test
+    void shouldUseContextUppercaseWhenContextProvided() throws Exception {
+        // Given
+        OutputPanelModel model = new OutputPanelModel();
+        model.setProcessorId("encoder.predefined.md5hash");
+        OutputPanelContext context = new OutputPanelContext(model, null, null);
+        context.setSetting(OutputPanelContext.KEY_HASHERS_LOWERCASE, false);
+        // When
+        EncodeDecodeResult result = processor.process("admin", context);
         // Then
         assertThat(result.hasError(), is(equalTo(false)));
         assertThat(result.getResult(), is(equalTo("21232F297A57A5A743894A0E4A801FC3")));

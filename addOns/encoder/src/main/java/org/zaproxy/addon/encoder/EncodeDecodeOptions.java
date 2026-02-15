@@ -34,6 +34,9 @@ public class EncodeDecodeOptions extends VersionedAbstractParam {
     /** The base configuration key for all "encoder" configurations. */
     private static final String PARAM_BASE_KEY = "encoder";
 
+    /** Prefix for processor-specific overrides (toolbar). */
+    private static final String PARAM_PROCESSOR_PREFIX = "encoder.processor.";
+
     private static final String PARAM_BASE64_CHARSET = "encoder.base64charset";
     private static final String PARAM_BASE64_DO_BREAK_LINES = "encoder.base64dobreaklines";
     private static final String PARAM_HASHERS_DO_LOWERCASE = "encoder.hashers.lowercase";
@@ -82,6 +85,49 @@ public class EncodeDecodeOptions extends VersionedAbstractParam {
         getConfig().setProperty(PARAM_HASHERS_DO_LOWERCASE, hashersLowerCase);
     }
 
+    /**
+     * Gets a processor-specific override from the config. When a toolbar value is changed it is
+     * stored here. When unset, lookup falls back to hard default (or legacy global if present).
+     *
+     * @param processorId e.g. encoder.predefined.base64encode
+     * @param key setting key (e.g. base64.charset, base64.breakLines)
+     * @return the value if set, or null
+     */
+    public String getProcessorSetting(String processorId, String key) {
+        if (getConfig() == null) {
+            return null;
+        }
+        return getConfig().getString(processorConfigKey(processorId, key));
+    }
+
+    /**
+     * Sets a processor-specific override in the config. Called when the toolbar value differs from
+     * the hard default so the override is persisted.
+     */
+    public void setProcessorSetting(String processorId, String key, String value) {
+        if (getConfig() == null) {
+            return;
+        }
+        getConfig().setProperty(processorConfigKey(processorId, key), value);
+    }
+
+    /**
+     * Removes a processor-specific override so lookup falls back to hard default (or legacy global
+     * value if present in config). Does not write or "roll back" to global; only removes the key.
+     */
+    public void clearProcessorSetting(String processorId, String key) {
+        if (getConfig() == null) {
+            return;
+        }
+        getConfig().clearProperty(processorConfigKey(processorId, key));
+    }
+
+    private static String processorConfigKey(String processorId, String key) {
+        String safeId = processorId.replace(".", "_");
+        String suffix = key.replace(".", "_");
+        return PARAM_PROCESSOR_PREFIX + safeId + "." + suffix;
+    }
+
     @Override
     protected void parseImpl() {
         base64DoBreakLines = getBoolean(PARAM_BASE64_DO_BREAK_LINES, DEFAULT_DO_BREAK_LINES);
@@ -106,7 +152,7 @@ public class EncodeDecodeOptions extends VersionedAbstractParam {
             boolean oldValue = getBoolean(CORE_PARAM_BASE64_DO_BREAK_LINES, DEFAULT_DO_BREAK_LINES);
             getConfig().clearProperty(CORE_PARAM_BASE64_DO_BREAK_LINES);
 
-            getConfig().setProperty(PARAM_BASE64_DO_BREAK_LINES, Boolean.valueOf(oldValue));
+            getConfig().setProperty(PARAM_BASE64_DO_BREAK_LINES, oldValue);
 
             String oldCharset = getString(CORE_PARAM_BASE64_CHARSET, DEFAULT_CHARSET);
             getConfig().clearProperty(CORE_PARAM_BASE64_CHARSET);

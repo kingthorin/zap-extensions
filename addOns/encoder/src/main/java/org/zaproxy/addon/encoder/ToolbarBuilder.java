@@ -3,7 +3,7 @@
  *
  * ZAP is an HTTP/HTTPS proxy for assessing web application security.
  *
- * Copyright 2018 The ZAP Development Team
+ * Copyright 2026 The ZAP Development Team
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.zaproxy.addon.encoder.processors;
+package org.zaproxy.addon.encoder;
 
-import org.zaproxy.addon.encoder.OutputPanelContext;
+import javax.swing.JToolBar;
 
-public interface EncodeDecodeProcessor {
-    EncodeDecodeResult process(String value) throws Exception;
+/**
+ * Builds a toolbar for an output panel. Toolbar controls read and write settings via the given
+ * {@link OutputPanelContext}; changes should trigger {@link OutputPanelContext#requestReprocess()}.
+ */
+@FunctionalInterface
+public interface ToolbarBuilder {
 
     /**
-     * Processes the value with optional per-panel context. Default implementation ignores context
-     * and delegates to {@link #process(String)}.
+     * Builds a toolbar bound to the given context.
+     *
+     * @param context the panel's context; use for get/set settings and requestReprocess
+     * @return a toolbar, never null
      */
-    default EncodeDecodeResult process(String value, OutputPanelContext context) throws Exception {
-        return process(value);
-    }
+    JToolBar buildToolbar(OutputPanelContext context);
 }

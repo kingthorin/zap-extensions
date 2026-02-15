@@ -36,7 +36,6 @@ import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
-import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -74,13 +73,17 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
     private static final long serialVersionUID = 1L;
     private static final Logger LOGGER = LogManager.getLogger(EncodeDecodeDialog.class);
     private final EncodeDecodeProcessors encodeDecodeProcessors;
+    private final OutputPanelToolbarFactory toolbarFactory;
+
+    /** Contexts by tab index, then panel index. Kept in sync with tabs. */
+    private final List<List<OutputPanelContext>> outputPanelContexts = new ArrayList<>();
+
     private JTabbedPane mainTabbedPane = null;
     private JPanel mainPanel = null;
     private JToolBar panelToolbar = null;
     private List<TabModel> tabs = new ArrayList<>();
     private ZapTextArea inputField = null;
     private JButton helpButton;
-    private JButton optionsButton;
     private JButton addTabButton;
     private JButton addOutputButton;
     private AddEncodeDecodeTabDialog addTabDialog;
@@ -95,6 +98,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         super();
         this.initialDividerLocation = configData.getDividerLocation();
         encodeDecodeProcessors = new EncodeDecodeProcessors();
+        toolbarFactory = EncodeDecodeProcessors.getToolbarFactory();
         init();
         setTabs(configData.getTabs());
 
@@ -120,6 +124,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
 
     public void setTabs(List<TabModel> tabModels) {
         getMainTabbedPane().removeAll();
+        outputPanelContexts.clear();
 
         for (TabModel tabModel : tabModels) {
             List<OutputPanelModel> outputPanels = tabModel.getOutputPanels();
@@ -210,8 +215,6 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             ++gbc.gridx;
             panelToolbar.add(getResetButton(), gbc);
             ++gbc.gridx;
-            panelToolbar.add(getOptionsButton(), gbc);
-            ++gbc.gridx;
             panelToolbar.add(getHelpButton(), gbc);
         }
         return panelToolbar;
@@ -296,6 +299,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         }
 
         tabs.add(tabModel);
+        outputPanelContexts.add(new ArrayList<>());
         int tabIndex = getIndex(tabModel);
 
         final JPanel newPanel = new JPanel();
@@ -368,9 +372,28 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             JPanel parentPanel = (JPanel) component;
             TabModel foundTab = getTabByIndex(tabIndex);
             foundTab.getOutputPanels().add(outputPanelModel);
+            int panelIndex = foundTab.getOutputPanels().size() - 1;
+
+            EncodeDecodeOptions globalOptions =
+                    Control.getSingleton()
+                            .getExtensionLoader()
+                            .getExtension(ExtensionEncoder.class)
+                            .getOptions();
+            OutputPanelContext context =
+                    new OutputPanelContext(
+                            outputPanelModel,
+                            globalOptions,
+                            () -> updateEncodeDecodeFieldForPosition(tabIndex, panelIndex));
+            outputPanelContexts.get(tabIndex).add(context);
+
             ZapTextArea outputField = newField(false);
-            addField(parentPanel, outputField, createOutputPanelTitle(outputPanelModel));
-            updateEncodeDecodeField(outputField, outputPanelModel);
+            addField(
+                    parentPanel,
+                    outputField,
+                    createOutputPanelTitle(outputPanelModel),
+                    outputPanelModel,
+                    context);
+            updateEncodeDecodeFieldForPosition(tabIndex, panelIndex);
         }
     }
 
@@ -398,26 +421,41 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             return;
         }
 
-        Component tab = getMainTabbedPane().getComponentAt(outputPanelPos.getTabIndex());
+        int tabIndex = outputPanelPos.getTabIndex();
+        int panelIndex = outputPanelPos.getOutputPanelIndex();
+        Component tab = getMainTabbedPane().getComponentAt(tabIndex);
         if (tab instanceof JPanel) {
             JPanel parentPanel = (JPanel) tab;
-            parentPanel.remove(outputPanelPos.getOutputPanelIndex());
-            getTabByIndex(outputPanelPos.getTabIndex())
-                    .getOutputPanels()
-                    .remove(outputPanelPos.getOutputPanelIndex());
+            parentPanel.remove(panelIndex);
+            getTabByIndex(tabIndex).getOutputPanels().remove(panelIndex);
+            if (tabIndex < outputPanelContexts.size()) {
+                outputPanelContexts.get(tabIndex).remove(panelIndex);
+            }
             SwingUtilities.invokeLater(() -> mainPanel.repaint());
         }
     }
 
     private OutputPanelPosition findOutputPanel(JTextComponent searched) {
+        Component targetScroll =
+                searched.getParent() != null ? searched.getParent().getParent() : null;
+        if (targetScroll == null) {
+            return null;
+        }
         for (int i = 0; i < getMainTabbedPane().getTabCount(); i++) {
             Component tab = getMainTabbedPane().getComponentAt(i);
             if (tab instanceof JPanel) {
                 JPanel parentPanel = (JPanel) tab;
                 for (int j = 0; j < parentPanel.getComponentCount(); j++) {
                     Component outputPanel = parentPanel.getComponent(j);
-                    if (outputPanel.equals(searched.getParent().getParent())) {
+                    if (outputPanel == targetScroll) {
                         return new OutputPanelPosition(i, j);
+                    }
+                    if (outputPanel instanceof JPanel) {
+                        for (Component ch : ((JPanel) outputPanel).getComponents()) {
+                            if (ch == targetScroll) {
+                                return new OutputPanelPosition(i, j);
+                            }
+                        }
                     }
                 }
             }
@@ -449,7 +487,12 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         return null;
     }
 
-    private void addField(JPanel parent, JComponent c, String title) {
+    private void addField(
+            JPanel parent,
+            ZapTextArea outputField,
+            String title,
+            OutputPanelModel outputPanelModel,
+            OutputPanelContext context) {
         final GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = globalOutputPanelIndex++;
@@ -459,18 +502,24 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         gbc.weightx = 0.5D;
         gbc.weighty = 0.5D;
 
-        final JScrollPane jsp = new JScrollPane();
-        jsp.setViewportView(c);
-        jsp.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        jsp.setBorder(
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBorder(
                 BorderFactory.createTitledBorder(
                         null,
                         title,
                         TitledBorder.DEFAULT_JUSTIFICATION,
                         TitledBorder.DEFAULT_POSITION,
                         FontUtils.getFont(FontUtils.Size.standard)));
+        JToolBar toolbar = toolbarFactory.createToolbar(outputPanelModel.getProcessorId(), context);
+        if (toolbar != null) {
+            wrapper.add(toolbar, BorderLayout.NORTH);
+        }
+        final JScrollPane jsp = new JScrollPane();
+        jsp.setViewportView(outputField);
+        jsp.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        wrapper.add(jsp, BorderLayout.CENTER);
 
-        parent.add(jsp, gbc);
+        parent.add(wrapper, gbc);
     }
 
     private JTabbedPane getMainTabbedPane() {
@@ -599,55 +648,92 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
                     return (ZapTextArea) view;
                 }
             }
+            if (component instanceof JPanel) {
+                for (Component child : ((JPanel) component).getComponents()) {
+                    if (child instanceof JScrollPane) {
+                        Component view = ((JScrollPane) child).getViewport().getView();
+                        if (view instanceof ZapTextArea) {
+                            return (ZapTextArea) view;
+                        }
+                    }
+                }
+            }
         }
         return null;
     }
 
     private void updateEncodeDecodeFields() {
         for (TabModel tab : tabs) {
-            for (OutputPanelModel outputPanel : tab.getOutputPanels()) {
+            int tabIndex = getIndex(tab);
+            if (tabIndex >= outputPanelContexts.size()) {
+                continue;
+            }
+            List<OutputPanelContext> contexts = outputPanelContexts.get(tabIndex);
+            for (int panelIndex = 0; panelIndex < tab.getOutputPanels().size(); panelIndex++) {
+                if (panelIndex >= contexts.size()) {
+                    continue;
+                }
+                OutputPanelModel outputPanel = tab.getOutputPanels().get(panelIndex);
                 ZapTextArea zapTextArea =
-                        findZapTextArea(
-                                new OutputPanelPosition(getIndex(tab), getIndex(tab, outputPanel)));
+                        findZapTextArea(new OutputPanelPosition(tabIndex, panelIndex));
                 if (zapTextArea != null) {
-                    updateEncodeDecodeField(zapTextArea, outputPanel);
+                    updateEncodeDecodeField(zapTextArea, outputPanel, contexts.get(panelIndex));
                 }
             }
         }
     }
 
-    private boolean updateEncodeDecodeField(ZapTextArea zapTextArea, OutputPanelModel outputPanel) {
-        EncodeDecodeResult result;
+    private void updateEncodeDecodeFieldForPosition(int tabIndex, int panelIndex) {
+        if (tabIndex >= outputPanelContexts.size()) {
+            return;
+        }
+        List<OutputPanelContext> contexts = outputPanelContexts.get(tabIndex);
+        if (panelIndex >= contexts.size()) {
+            return;
+        }
+        TabModel tab = getTabByIndex(tabIndex);
+        if (panelIndex >= tab.getOutputPanels().size()) {
+            return;
+        }
+        OutputPanelModel outputPanel = tab.getOutputPanels().get(panelIndex);
+        ZapTextArea zapTextArea = findZapTextArea(new OutputPanelPosition(tabIndex, panelIndex));
+        if (zapTextArea != null) {
+            updateEncodeDecodeField(zapTextArea, outputPanel, contexts.get(panelIndex));
+        }
+    }
+
+    private boolean updateEncodeDecodeField(
+            ZapTextArea zapTextArea, OutputPanelModel outputPanel, OutputPanelContext context) {
         try {
-            result =
+            EncodeDecodeResult result =
                     encodeDecodeProcessors.process(
-                            outputPanel.getProcessorId(), getInputField().getText());
+                            outputPanel.getProcessorId(), getInputField().getText(), context);
+
+            if (result == null) {
+                zapTextArea.setText(
+                        Constant.messages.getString("encoder.dialog.encodedecode.notfound"));
+                zapTextArea.setBorder(BorderFactory.createLineBorder(Color.RED));
+                zapTextArea.setEnabled(false);
+                return false;
+            }
+
+            if (result.hasError()) {
+                zapTextArea.setText(result.getResult());
+                zapTextArea.setBorder(BorderFactory.createEmptyBorder());
+                zapTextArea.setEnabled(false);
+                return false;
+            }
+
+            zapTextArea.setText(result.getResult());
+            zapTextArea.setBorder(BorderFactory.createEmptyBorder());
+            zapTextArea.setEnabled(true);
+            return true;
         } catch (Exception e) {
             zapTextArea.setText(e.getMessage());
             zapTextArea.setBorder(BorderFactory.createLineBorder(Color.RED));
             zapTextArea.setEnabled(false);
             return false;
         }
-
-        if (result == null) {
-            zapTextArea.setText(
-                    Constant.messages.getString("encoder.dialog.encodedecode.notfound"));
-            zapTextArea.setBorder(BorderFactory.createLineBorder(Color.RED));
-            zapTextArea.setEnabled(false);
-            return false;
-        }
-
-        if (result.hasError()) {
-            zapTextArea.setText(result.getResult());
-            zapTextArea.setBorder(BorderFactory.createEmptyBorder());
-            zapTextArea.setEnabled(false);
-            return false;
-        }
-
-        zapTextArea.setText(result.getResult());
-        zapTextArea.setBorder(BorderFactory.createEmptyBorder());
-        zapTextArea.setEnabled(true);
-        return true;
     }
 
     private void saveSetting() {
@@ -682,27 +768,6 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             helpButton.addActionListener(e -> ExtensionHelp.showHelp("encoder"));
         }
         return helpButton;
-    }
-
-    private JButton getOptionsButton() {
-        if (optionsButton == null) {
-            optionsButton = new JButton();
-            optionsButton.setToolTipText(Constant.messages.getString("encoder.dialog.options"));
-            optionsButton.setIcon(
-                    DisplayUtils.getScaledIcon(
-                            new ImageIcon(
-                                    EncodeDecodeDialog.class.getResource(
-                                            "/resource/icon/16/041.png"))));
-
-            optionsButton.addActionListener(
-                    e ->
-                            Control.getSingleton()
-                                    .getMenuToolsControl()
-                                    .options(
-                                            Constant.messages.getString(
-                                                    "encoder.optionspanel.name")));
-        }
-        return optionsButton;
     }
 
     private static class OutputPanelPosition {

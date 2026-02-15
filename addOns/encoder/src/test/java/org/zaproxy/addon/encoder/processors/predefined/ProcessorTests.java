@@ -30,6 +30,7 @@ import static org.mockito.Mockito.withSettings;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
@@ -62,6 +63,15 @@ public abstract class ProcessorTests<T extends EncodeDecodeProcessor> extends Te
         options = mock(EncodeDecodeOptions.class, withSettings().strictness(Strictness.LENIENT));
         given(extEnc.getOptions()).willReturn(options);
         given(options.getBase64Charset()).willReturn(EncodeDecodeOptions.DEFAULT_CHARSET);
+        given(options.isBase64DoBreakLines())
+                .willReturn(EncodeDecodeOptions.DEFAULT_DO_BREAK_LINES);
+        given(options.isHashersLowerCase()).willReturn(false);
+    }
+
+    @AfterEach
+    void tearDown() {
+        processor = null;
+        options = null;
     }
 
     protected abstract T createProcessor();

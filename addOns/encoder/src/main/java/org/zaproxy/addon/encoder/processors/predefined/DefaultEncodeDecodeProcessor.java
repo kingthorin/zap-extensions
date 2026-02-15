@@ -19,6 +19,9 @@
  */
 package org.zaproxy.addon.encoder.processors.predefined;
 
+import org.parosproxy.paros.control.Control;
+import org.zaproxy.addon.encoder.EncodeDecodeOptions;
+import org.zaproxy.addon.encoder.ExtensionEncoder;
 import org.zaproxy.addon.encoder.processors.EncodeDecodeProcessor;
 import org.zaproxy.addon.encoder.processors.EncodeDecodeResult;
 
@@ -36,4 +39,11 @@ public abstract class DefaultEncodeDecodeProcessor implements EncodeDecodeProces
     }
 
     protected abstract String processInternal(String value) throws Exception;
+
+    protected static EncodeDecodeOptions getOptions() {
+        return Control.getSingleton()
+                .getExtensionLoader()
+                .getExtension(ExtensionEncoder.class)
+                .getOptions();
+    }
 }

@@ -24,6 +24,8 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 
 import org.junit.jupiter.api.Test;
+import org.zaproxy.addon.encoder.OutputPanelContext;
+import org.zaproxy.addon.encoder.OutputPanelModel;
 import org.zaproxy.addon.encoder.processors.EncodeDecodeResult;
 
 class Base64DecoderUnitTest extends ProcessorTests<Base64Decoder> {
@@ -77,5 +79,19 @@ class Base64DecoderUnitTest extends ProcessorTests<Base64Decoder> {
         // Then
         assertThat(result.hasError(), is(equalTo(false)));
         assertThat(result.getResult(), is(equalTo(EIGHTY_CHARS_LOREM)));
+    }
+
+    @Test
+    void shouldUseContextCharsetWhenContextProvided() throws Exception {
+        // Given
+        OutputPanelModel model = new OutputPanelModel();
+        model.setProcessorId("encoder.predefined.base64decode");
+        OutputPanelContext context = new OutputPanelContext(model, null, null);
+        context.setSetting(OutputPanelContext.KEY_BASE64_CHARSET, "UTF-8");
+        // When
+        EncodeDecodeResult result = processor.process("YWRtaW4=", context);
+        // Then
+        assertThat(result.hasError(), is(equalTo(false)));
+        assertThat(result.getResult(), is(equalTo("admin")));
     }
 }

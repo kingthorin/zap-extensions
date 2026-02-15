@@ -20,23 +20,37 @@
 package org.zaproxy.addon.encoder.processors.predefined;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.Base64;
-import org.parosproxy.paros.control.Control;
-import org.zaproxy.addon.encoder.EncodeDecodeOptions;
-import org.zaproxy.addon.encoder.ExtensionEncoder;
+import org.zaproxy.addon.encoder.OutputPanelContext;
+import org.zaproxy.addon.encoder.processors.EncodeDecodeResult;
 
 public class Base64Decoder extends DefaultEncodeDecodeProcessor {
 
     private static final Base64Decoder INSTANCE = new Base64Decoder();
 
     @Override
+    public EncodeDecodeResult process(String value, OutputPanelContext context) throws Exception {
+        String charsetName;
+        if (context != null) {
+            charsetName = context.getString(OutputPanelContext.KEY_BASE64_CHARSET);
+        } else {
+            charsetName = getOptions().getBase64Charset();
+        }
+        return new EncodeDecodeResult(processInternal(value, charsetName));
+    }
+
+    @Override
     protected String processInternal(String value) throws IOException {
-        EncodeDecodeOptions encDecOpts =
-                Control.getSingleton()
-                        .getExtensionLoader()
-                        .getExtension(ExtensionEncoder.class)
-                        .getOptions();
-        return new String(Base64.getMimeDecoder().decode(value), encDecOpts.getBase64Charset());
+        return processInternal(value, getOptions().getBase64Charset());
+    }
+
+    protected String processInternal(String value, String charsetName) {
+        return decode(value, charsetName);
+    }
+
+    private static String decode(String value, String charsetName) {
+        return new String(Base64.getMimeDecoder().decode(value), Charset.forName(charsetName));
     }
 
     public static Base64Decoder getSingleton() {

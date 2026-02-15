@@ -27,7 +27,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import org.parosproxy.paros.Constant;
+import org.zaproxy.addon.encoder.Base64ToolbarBuilder;
 import org.zaproxy.addon.encoder.ExtensionEncoder;
+import org.zaproxy.addon.encoder.HashToolbarBuilder;
+import org.zaproxy.addon.encoder.OutputPanelContext;
+import org.zaproxy.addon.encoder.OutputPanelToolbarFactory;
 import org.zaproxy.addon.encoder.processors.predefined.Base64Decoder;
 import org.zaproxy.addon.encoder.processors.predefined.Base64Encoder;
 import org.zaproxy.addon.encoder.processors.predefined.Base64UrlDecoder;
@@ -66,6 +70,7 @@ public class EncodeDecodeProcessors {
 
     public static final String PREDEFINED_PREFIX = "encoder.predefined.";
     private static List<EncodeDecodeProcessorItem> predefinedProcessors = new ArrayList<>();
+    private static final OutputPanelToolbarFactory toolbarFactory = new OutputPanelToolbarFactory();
 
     static {
         addPredefined("base64decode", Base64Decoder.getSingleton());
@@ -110,6 +115,18 @@ public class EncodeDecodeProcessors {
         addPredefined("ascify", Ascify.getSingleton());
         addPredefined("morsecodeencode", MorseEncoder.getSingleton());
         addPredefined("morsecodedecode", MorseDecoder.getSingleton());
+
+        toolbarFactory.register(PREDEFINED_PREFIX + "base64encode", new Base64ToolbarBuilder());
+        toolbarFactory.register(PREDEFINED_PREFIX + "base64decode", new Base64ToolbarBuilder());
+
+        HashToolbarBuilder hashToolbarBuilder = new HashToolbarBuilder();
+        toolbarFactory.register(PREDEFINED_PREFIX + "md5hash", hashToolbarBuilder);
+        toolbarFactory.register(PREDEFINED_PREFIX + "sha1hash", hashToolbarBuilder);
+        toolbarFactory.register(PREDEFINED_PREFIX + "sha256hash", hashToolbarBuilder);
+    }
+
+    public static OutputPanelToolbarFactory getToolbarFactory() {
+        return toolbarFactory;
     }
 
     private Map<String, EncodeDecodeProcessorItem> scriptProcessors = new HashMap<>();
@@ -171,8 +188,13 @@ public class EncodeDecodeProcessors {
     }
 
     public EncodeDecodeResult process(String processorId, String value) throws Exception {
+        return process(processorId, value, null);
+    }
+
+    public EncodeDecodeResult process(String processorId, String value, OutputPanelContext context)
+            throws Exception {
         EncodeDecodeProcessorItem processor = findProcessorItemById(processorId);
-        return processor.getProcessor().process(value);
+        return processor.getProcessor().process(value, context);
     }
 
     public static List<EncodeDecodeProcessorItem> getPredefinedProcessors() {

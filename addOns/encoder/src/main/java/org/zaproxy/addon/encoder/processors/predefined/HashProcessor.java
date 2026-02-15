@@ -21,9 +21,8 @@ package org.zaproxy.addon.encoder.processors.predefined;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import org.parosproxy.paros.control.Control;
-import org.zaproxy.addon.encoder.EncodeDecodeOptions;
-import org.zaproxy.addon.encoder.ExtensionEncoder;
+import org.zaproxy.addon.encoder.OutputPanelContext;
+import org.zaproxy.addon.encoder.processors.EncodeDecodeResult;
 
 public class HashProcessor extends DefaultEncodeDecodeProcessor {
 
@@ -34,14 +33,26 @@ public class HashProcessor extends DefaultEncodeDecodeProcessor {
     }
 
     @Override
+    public EncodeDecodeResult process(String value, OutputPanelContext context)
+            throws NoSuchAlgorithmException {
+        boolean lowercase;
+        if (context != null) {
+            lowercase = context.getBoolean(OutputPanelContext.KEY_HASHERS_LOWERCASE);
+        } else {
+            lowercase = getOptions().isHashersLowerCase();
+        }
+        return new EncodeDecodeResult(processInternal(value, lowercase));
+    }
+
+    @Override
     protected String processInternal(String value) throws NoSuchAlgorithmException {
-        EncodeDecodeOptions encDecOpts =
-                Control.getSingleton()
-                        .getExtensionLoader()
-                        .getExtension(ExtensionEncoder.class)
-                        .getOptions();
+        return processInternal(value, getOptions().isHashersLowerCase());
+    }
+
+    protected String processInternal(String value, boolean lowercase)
+            throws NoSuchAlgorithmException {
         String output = HexStringEncoder.getHexString(getHash(value.getBytes()));
-        return encDecOpts.isHashersLowerCase() ? output.toLowerCase() : output;
+        return lowercase ? output.toLowerCase() : output;
     }
 
     private byte[] getHash(byte[] buf) throws NoSuchAlgorithmException {
