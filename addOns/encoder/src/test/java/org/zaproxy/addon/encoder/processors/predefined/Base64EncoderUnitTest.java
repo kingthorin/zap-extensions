@@ -25,6 +25,8 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.BDDMockito.given;
 
 import org.junit.jupiter.api.Test;
+import org.zaproxy.addon.encoder.OutputPanelContext;
+import org.zaproxy.addon.encoder.OutputPanelModel;
 import org.zaproxy.addon.encoder.processors.EncodeDecodeResult;
 
 class Base64EncoderUnitTest extends ProcessorTests<Base64Encoder> {
@@ -68,6 +70,25 @@ class Base64EncoderUnitTest extends ProcessorTests<Base64Encoder> {
         given(options.isBase64DoBreakLines()).willReturn(false);
         // When
         EncodeDecodeResult result = processor.process(EIGHTY_CHARS_LOREM);
+        // Then
+        assertThat(result.hasError(), is(equalTo(false)));
+        assertThat(
+                result.getResult(),
+                is(
+                        equalTo(
+                                "TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQsIGNvbnNlY3RldHVyIGFkaXBpc2NpbmcgZWxpdC4gTnVsbGFtIHRyaXN0aXF1ZSBtb3JiaS4=")));
+    }
+
+    @Test
+    void shouldUseContextCharsetAndBreakLinesWhenContextProvided() throws Exception {
+        // Given
+        OutputPanelModel model = new OutputPanelModel();
+        model.setProcessorId("encoder.predefined.base64encode");
+        OutputPanelContext context = new OutputPanelContext(model, null, null);
+        context.setSetting(OutputPanelContext.KEY_BASE64_CHARSET, "UTF-8");
+        context.setSetting(OutputPanelContext.KEY_BASE64_BREAK_LINES, false);
+        // When
+        EncodeDecodeResult result = processor.process(EIGHTY_CHARS_LOREM, context);
         // Then
         assertThat(result.hasError(), is(equalTo(false)));
         assertThat(

@@ -19,6 +19,16 @@
  */
 package org.zaproxy.addon.encoder.processors;
 
+import org.zaproxy.addon.encoder.OutputPanelContext;
+
 public interface EncodeDecodeProcessor {
     EncodeDecodeResult process(String value) throws Exception;
+
+    /**
+     * Processes the value with optional per-panel context. Default implementation ignores context
+     * and delegates to {@link #process(String)}.
+     */
+    default EncodeDecodeResult process(String value, OutputPanelContext context) throws Exception {
+        return process(value);
+    }
 }

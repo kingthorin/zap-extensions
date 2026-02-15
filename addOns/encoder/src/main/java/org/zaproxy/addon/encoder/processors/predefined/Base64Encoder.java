@@ -20,30 +20,55 @@
 package org.zaproxy.addon.encoder.processors.predefined;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.Base64;
 import org.parosproxy.paros.control.Control;
 import org.zaproxy.addon.encoder.EncodeDecodeOptions;
 import org.zaproxy.addon.encoder.ExtensionEncoder;
+import org.zaproxy.addon.encoder.OutputPanelContext;
+import org.zaproxy.addon.encoder.processors.EncodeDecodeResult;
 
 public class Base64Encoder extends DefaultEncodeDecodeProcessor {
 
     private static final Base64Encoder INSTANCE = new Base64Encoder();
 
     @Override
+    public EncodeDecodeResult process(String value, OutputPanelContext context) throws Exception {
+        String charsetName;
+        boolean breakLines;
+        if (context != null) {
+            charsetName = context.getString(OutputPanelContext.KEY_BASE64_CHARSET);
+            breakLines = context.getBoolean(OutputPanelContext.KEY_BASE64_BREAK_LINES);
+        } else {
+            EncodeDecodeOptions encDecOpts =
+                    Control.getSingleton()
+                            .getExtensionLoader()
+                            .getExtension(ExtensionEncoder.class)
+                            .getOptions();
+            charsetName = encDecOpts.getBase64Charset();
+            breakLines = encDecOpts.isBase64DoBreakLines();
+        }
+        String result = encode(value, charsetName, breakLines);
+        return new EncodeDecodeResult(result);
+    }
+
+    @Override
     protected String processInternal(String value) throws IOException {
-        EncodeDecodeOptions encDecOpts =
+        EncodeDecodeOptions opts =
                 Control.getSingleton()
                         .getExtensionLoader()
                         .getExtension(ExtensionEncoder.class)
                         .getOptions();
-        if (encDecOpts.isBase64DoBreakLines()) {
-            return new String(
-                    Base64.getMimeEncoder().encode(value.getBytes(encDecOpts.getBase64Charset())),
-                    encDecOpts.getBase64Charset());
+        return encode(value, opts.getBase64Charset(), opts.isBase64DoBreakLines());
+    }
+
+    private static String encode(String value, String charsetName, boolean breakLines)
+            throws IOException {
+        Charset charset = Charset.forName(charsetName);
+        if (breakLines) {
+            return new String(Base64.getMimeEncoder().encode(value.getBytes(charset)), charset);
         }
-        return new String(
-                Base64.getEncoder().encode(value.getBytes(encDecOpts.getBase64Charset())),
-                encDecOpts.getBase64Charset());
+        return new String(Base64.getEncoder().encode(value.getBytes(charset)), charset);
     }
 
     public static Base64Encoder getSingleton() {
