@@ -27,7 +27,7 @@ import org.parosproxy.paros.Constant;
 public class HashToolbarBuilder implements ToolbarBuilder {
 
     @Override
-    public JToolBar buildToolbar(OutputPanelContext context) {
+    public ToolbarWithRefresh buildToolbar(OutputPanelContext context) {
         JToolBar toolbar = new JToolBar();
         toolbar.setFloatable(false);
         toolbar.setRollover(true);
@@ -36,13 +36,21 @@ public class HashToolbarBuilder implements ToolbarBuilder {
                 new JCheckBox(
                         Constant.messages.getString("encoder.toolbar.hashers.output.lowercase"));
         lowercaseCheck.setSelected(context.getBoolean(OutputPanelContext.KEY_HASHERS_LOWERCASE));
-        lowercaseCheck.addActionListener(
+        java.awt.event.ActionListener listener =
                 e ->
                         context.setSetting(
                                 OutputPanelContext.KEY_HASHERS_LOWERCASE,
-                                lowercaseCheck.isSelected()));
+                                lowercaseCheck.isSelected());
+        lowercaseCheck.addActionListener(listener);
         toolbar.add(lowercaseCheck);
 
-        return toolbar;
+        Runnable refresh =
+                () -> {
+                    lowercaseCheck.removeActionListener(listener);
+                    lowercaseCheck.setSelected(
+                            context.getBoolean(OutputPanelContext.KEY_HASHERS_LOWERCASE));
+                    lowercaseCheck.addActionListener(listener);
+                };
+        return new ToolbarWithRefresh(toolbar, refresh);
     }
 }

@@ -25,7 +25,6 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
-import javax.swing.JToolBar;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -56,7 +55,7 @@ class OutputPanelToolbarFactoryUnitTest {
     @Test
     void shouldReturnBuilderWhenToolbarBuilderRegistered() {
         // Given
-        ToolbarBuilder builder = ctx -> new JToolBar();
+        ToolbarBuilder builder = ctx -> new ToolbarWithRefresh(new javax.swing.JToolBar(), null);
         factory.register(PROCESSOR_ID, builder);
         // When
         ToolbarBuilder result = factory.getToolbarBuilder(PROCESSOR_ID);
@@ -67,22 +66,22 @@ class OutputPanelToolbarFactoryUnitTest {
     @Test
     void shouldReturnNullToolbarWhenNoBuilderRegistered() {
         // When
-        JToolBar toolbar = factory.createToolbar(PROCESSOR_ID, context);
+        ToolbarWithRefresh twr = factory.createToolbar(PROCESSOR_ID, context);
         // Then
-        assertThat(toolbar, is(nullValue()));
+        assertThat(twr, is(nullValue()));
     }
 
     @Test
     void shouldReturnToolbarWhenBuilderRegistered() {
         // Given
-        JToolBar expectedToolbar = new JToolBar();
-        ToolbarBuilder builder = ctx -> expectedToolbar;
+        javax.swing.JToolBar expectedToolbar = new javax.swing.JToolBar();
+        ToolbarBuilder builder = ctx -> new ToolbarWithRefresh(expectedToolbar, null);
         factory.register(PROCESSOR_ID, builder);
         // When
-        JToolBar toolbar = factory.createToolbar(PROCESSOR_ID, context);
+        ToolbarWithRefresh twr = factory.createToolbar(PROCESSOR_ID, context);
         // Then
-        assertThat(toolbar, is(notNullValue()));
-        assertThat(toolbar, is(equalTo(expectedToolbar)));
+        assertThat(twr, is(notNullValue()));
+        assertThat(twr.getToolbar(), is(equalTo(expectedToolbar)));
     }
 
     @Test
@@ -92,12 +91,28 @@ class OutputPanelToolbarFactoryUnitTest {
         ToolbarBuilder builder =
                 c -> {
                     captured[0] = c;
-                    return new JToolBar();
+                    return new ToolbarWithRefresh(new javax.swing.JToolBar(), null);
                 };
         factory.register(PROCESSOR_ID, builder);
         // When
         factory.createToolbar(PROCESSOR_ID, context);
         // Then
         assertThat(captured[0], is(equalTo(context)));
+    }
+
+    @Test
+    void shouldReturnToolbarWithRefreshRunnableWhenBuilderProvidesOne() {
+        // Given
+        boolean[] refreshed = new boolean[1];
+        ToolbarBuilder builder =
+                ctx ->
+                        new ToolbarWithRefresh(
+                                new javax.swing.JToolBar(), () -> refreshed[0] = true);
+        factory.register(PROCESSOR_ID, builder);
+        ToolbarWithRefresh twr = factory.createToolbar(PROCESSOR_ID, context);
+        // When
+        twr.refreshFromContext();
+        // Then
+        assertThat(refreshed[0], is(true));
     }
 }

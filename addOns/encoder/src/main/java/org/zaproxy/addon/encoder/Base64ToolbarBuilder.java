@@ -32,7 +32,7 @@ public class Base64ToolbarBuilder implements ToolbarBuilder {
     private static final String[] CHARSETS = {"ISO-8859-1", "US-ASCII", "UTF-8"};
 
     @Override
-    public JToolBar buildToolbar(OutputPanelContext context) {
+    public ToolbarWithRefresh buildToolbar(OutputPanelContext context) {
         JToolBar toolbar = new JToolBar();
         toolbar.setFloatable(false);
         toolbar.setRollover(true);
@@ -40,11 +40,12 @@ public class Base64ToolbarBuilder implements ToolbarBuilder {
         toolbar.add(new JLabel(Constant.messages.getString("encoder.toolbar.base64.charset")));
         JComboBox<String> charsetCombo = new JComboBox<>(new DefaultComboBoxModel<>(CHARSETS));
         charsetCombo.setSelectedItem(context.getString(OutputPanelContext.KEY_BASE64_CHARSET));
-        charsetCombo.addActionListener(
+        java.awt.event.ActionListener charsetListener =
                 e ->
                         context.setSetting(
                                 OutputPanelContext.KEY_BASE64_CHARSET,
-                                (String) charsetCombo.getSelectedItem()));
+                                (String) charsetCombo.getSelectedItem());
+        charsetCombo.addActionListener(charsetListener);
         toolbar.add(charsetCombo);
 
         toolbar.addSeparator();
@@ -52,13 +53,25 @@ public class Base64ToolbarBuilder implements ToolbarBuilder {
         JCheckBox breakLinesCheck =
                 new JCheckBox(Constant.messages.getString("encoder.toolbar.base64.breaklines"));
         breakLinesCheck.setSelected(context.getBoolean(OutputPanelContext.KEY_BASE64_BREAK_LINES));
-        breakLinesCheck.addActionListener(
+        java.awt.event.ActionListener breakLinesListener =
                 e ->
                         context.setSetting(
                                 OutputPanelContext.KEY_BASE64_BREAK_LINES,
-                                breakLinesCheck.isSelected()));
+                                breakLinesCheck.isSelected());
+        breakLinesCheck.addActionListener(breakLinesListener);
         toolbar.add(breakLinesCheck);
 
-        return toolbar;
+        Runnable refresh =
+                () -> {
+                    charsetCombo.removeActionListener(charsetListener);
+                    charsetCombo.setSelectedItem(
+                            context.getString(OutputPanelContext.KEY_BASE64_CHARSET));
+                    charsetCombo.addActionListener(charsetListener);
+                    breakLinesCheck.removeActionListener(breakLinesListener);
+                    breakLinesCheck.setSelected(
+                            context.getBoolean(OutputPanelContext.KEY_BASE64_BREAK_LINES));
+                    breakLinesCheck.addActionListener(breakLinesListener);
+                };
+        return new ToolbarWithRefresh(toolbar, refresh);
     }
 }

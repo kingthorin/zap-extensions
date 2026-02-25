@@ -19,11 +19,11 @@
  */
 package org.zaproxy.addon.encoder;
 
-import javax.swing.JToolBar;
-
 /**
  * Builds a toolbar for an output panel. Toolbar controls read and write settings via the given
  * {@link OutputPanelContext}; changes should trigger {@link OutputPanelContext#requestReprocess()}.
+ * Returns a {@link ToolbarWithRefresh} so the dialog can refresh the toolbar from context when
+ * another panel with the same processor persists a setting.
  */
 @FunctionalInterface
 public interface ToolbarBuilder {
@@ -32,7 +32,7 @@ public interface ToolbarBuilder {
      * Builds a toolbar bound to the given context.
      *
      * @param context the panel's context; use for get/set settings and requestReprocess
-     * @return a toolbar, never null
+     * @return a toolbar with optional refresh runnable, never null
      */
-    JToolBar buildToolbar(OutputPanelContext context);
+    ToolbarWithRefresh buildToolbar(OutputPanelContext context);
 }

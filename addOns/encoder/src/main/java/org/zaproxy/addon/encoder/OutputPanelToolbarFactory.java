@@ -21,7 +21,6 @@ package org.zaproxy.addon.encoder;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import javax.swing.JToolBar;
 
 /**
  * Registry mapping processor IDs to {@link ToolbarBuilder}s. Creates toolbars on demand when output
@@ -54,9 +53,9 @@ public class OutputPanelToolbarFactory {
      *
      * @param processorId the panel's processor ID
      * @param context the panel's context
-     * @return a new toolbar, or null
+     * @return a new toolbar with optional refresh, or null
      */
-    public JToolBar createToolbar(String processorId, OutputPanelContext context) {
+    public ToolbarWithRefresh createToolbar(String processorId, OutputPanelContext context) {
         ToolbarBuilder builder = builders.get(processorId);
         if (builder == null) {
             return null;

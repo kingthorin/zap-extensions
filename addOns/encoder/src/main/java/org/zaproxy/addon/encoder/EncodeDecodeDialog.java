@@ -26,6 +26,8 @@ import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
@@ -78,6 +80,12 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
     /** Contexts by tab index, then panel index. Kept in sync with tabs. */
     private final List<List<OutputPanelContext>> outputPanelContexts = new ArrayList<>();
 
+    /**
+     * Refresh runnables per tab/panel, in sync with {@link #outputPanelContexts}. Used to refresh
+     * toolbars when another panel with the same processor persists a setting.
+     */
+    private final List<List<Runnable>> toolbarRefreshRunnables = new ArrayList<>();
+
     private JTabbedPane mainTabbedPane = null;
     private JPanel mainPanel = null;
     private JToolBar panelToolbar = null;
@@ -125,6 +133,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
     public void setTabs(List<TabModel> tabModels) {
         getMainTabbedPane().removeAll();
         outputPanelContexts.clear();
+        toolbarRefreshRunnables.clear();
 
         for (TabModel tabModel : tabModels) {
             List<OutputPanelModel> outputPanels = tabModel.getOutputPanels();
@@ -300,6 +309,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
 
         tabs.add(tabModel);
         outputPanelContexts.add(new ArrayList<>());
+        toolbarRefreshRunnables.add(new ArrayList<>());
         int tabIndex = getIndex(tabModel);
 
         final JPanel newPanel = new JPanel();
@@ -383,7 +393,8 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
                     new OutputPanelContext(
                             outputPanelModel,
                             globalOptions,
-                            () -> updateEncodeDecodeFieldForPosition(tabIndex, panelIndex));
+                            () -> updateEncodeDecodeFieldForPosition(tabIndex, panelIndex),
+                            this::refreshToolbarsForProcessor);
             outputPanelContexts.get(tabIndex).add(context);
 
             ZapTextArea outputField = newField(false);
@@ -392,7 +403,8 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
                     outputField,
                     createOutputPanelTitle(outputPanelModel),
                     outputPanelModel,
-                    context);
+                    context,
+                    tabIndex);
             updateEncodeDecodeFieldForPosition(tabIndex, panelIndex);
         }
     }
@@ -430,6 +442,9 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             getTabByIndex(tabIndex).getOutputPanels().remove(panelIndex);
             if (tabIndex < outputPanelContexts.size()) {
                 outputPanelContexts.get(tabIndex).remove(panelIndex);
+            }
+            if (tabIndex < toolbarRefreshRunnables.size()) {
+                toolbarRefreshRunnables.get(tabIndex).remove(panelIndex);
             }
             SwingUtilities.invokeLater(() -> mainPanel.repaint());
         }
@@ -492,7 +507,8 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             ZapTextArea outputField,
             String title,
             OutputPanelModel outputPanelModel,
-            OutputPanelContext context) {
+            OutputPanelContext context,
+            int tabIndex) {
         final GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = globalOutputPanelIndex++;
@@ -510,9 +526,13 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
                         TitledBorder.DEFAULT_JUSTIFICATION,
                         TitledBorder.DEFAULT_POSITION,
                         FontUtils.getFont(FontUtils.Size.standard)));
-        JToolBar toolbar = toolbarFactory.createToolbar(outputPanelModel.getProcessorId(), context);
-        if (toolbar != null) {
-            wrapper.add(toolbar, BorderLayout.NORTH);
+        ToolbarWithRefresh twr =
+                toolbarFactory.createToolbar(outputPanelModel.getProcessorId(), context);
+        if (twr != null) {
+            wrapper.add(twr.getToolbar(), BorderLayout.NORTH);
+            toolbarRefreshRunnables.get(tabIndex).add(twr::refreshFromContext);
+        } else {
+            toolbarRefreshRunnables.get(tabIndex).add(null);
         }
         final JScrollPane jsp = new JScrollPane();
         jsp.setViewportView(outputField);
@@ -520,6 +540,33 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
         wrapper.add(jsp, BorderLayout.CENTER);
 
         parent.add(wrapper, gbc);
+    }
+
+    /**
+     * Refreshes toolbar controls for all panels that use the given processor. Called when a setting
+     * is persisted so other panels with the same processor stay in sync. Runs on the EDT via
+     * invokeLater to avoid blocking the current user action.
+     */
+    private void refreshToolbarsForProcessor(String processorId) {
+        SwingUtilities.invokeLater(
+                () -> {
+                    for (int t = 0; t < outputPanelContexts.size(); t++) {
+                        List<OutputPanelContext> contexts = outputPanelContexts.get(t);
+                        List<Runnable> runnables =
+                                t < toolbarRefreshRunnables.size()
+                                        ? toolbarRefreshRunnables.get(t)
+                                        : List.of();
+                        for (int p = 0; p < contexts.size() && p < runnables.size(); p++) {
+                            if (processorId.equals(
+                                    contexts.get(p).getPanelModel().getProcessorId())) {
+                                Runnable refresh = runnables.get(p);
+                                if (refresh != null) {
+                                    refresh.run();
+                                }
+                            }
+                        }
+                    }
+                });
     }
 
     private JTabbedPane getMainTabbedPane() {
@@ -561,8 +608,17 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
                     new JSplitPane(
                             JSplitPane.VERTICAL_SPLIT, scrollPanelWithInputField, bottomPanel);
             inputOutputSplitPane.setResizeWeight(initialDividerLocation);
-            inputOutputSplitPane.setDividerLocation(initialDividerLocation);
             inputOutputSplitPane.setOneTouchExpandable(true);
+            inputOutputSplitPane.addComponentListener(
+                    new ComponentAdapter() {
+                        @Override
+                        public void componentResized(ComponentEvent e) {
+                            if (inputOutputSplitPane.getHeight() > 0) {
+                                inputOutputSplitPane.setDividerLocation(initialDividerLocation);
+                                inputOutputSplitPane.removeComponentListener(this);
+                            }
+                        }
+                    });
 
             mainPanel.add(inputOutputSplitPane, BorderLayout.CENTER);
         }

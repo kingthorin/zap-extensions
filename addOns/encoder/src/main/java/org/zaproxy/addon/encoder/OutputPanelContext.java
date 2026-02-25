@@ -21,6 +21,7 @@ package org.zaproxy.addon.encoder;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Encapsulates state and operations for a single output panel instance. Settings hierarchy:
@@ -46,15 +47,30 @@ public class OutputPanelContext {
     private final OutputPanelModel panelModel;
     private final EncodeDecodeOptions globalOptions;
     private final Runnable reprocessCallback;
+    private final Consumer<String> onProcessorSettingPersisted;
     private final Map<String, String> instanceSettings = new HashMap<>();
 
+    /**
+     * Constructor with optional callback when a processor setting is persisted. Use when the dialog
+     * needs to refresh other panels' toolbars for the same processor.
+     */
+    public OutputPanelContext(
+            OutputPanelModel panelModel,
+            EncodeDecodeOptions globalOptions,
+            Runnable reprocessCallback,
+            Consumer<String> onProcessorSettingPersisted) {
+        this.panelModel = panelModel;
+        this.globalOptions = globalOptions;
+        this.reprocessCallback = reprocessCallback;
+        this.onProcessorSettingPersisted = onProcessorSettingPersisted;
+    }
+
+    /** Constructor without persist callback (e.g. tests). */
     public OutputPanelContext(
             OutputPanelModel panelModel,
             EncodeDecodeOptions globalOptions,
             Runnable reprocessCallback) {
-        this.panelModel = panelModel;
-        this.globalOptions = globalOptions;
-        this.reprocessCallback = reprocessCallback;
+        this(panelModel, globalOptions, reprocessCallback, null);
     }
 
     public OutputPanelModel getPanelModel() {
@@ -185,6 +201,9 @@ public class OutputPanelContext {
             globalOptions.clearProcessorSetting(processorId, key);
         } else {
             globalOptions.setProcessorSetting(processorId, key, value);
+        }
+        if (onProcessorSettingPersisted != null) {
+            onProcessorSettingPersisted.accept(processorId);
         }
     }
 }
