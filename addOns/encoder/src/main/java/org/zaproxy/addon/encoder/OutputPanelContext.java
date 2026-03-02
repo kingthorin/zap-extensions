@@ -45,6 +45,7 @@ public class OutputPanelContext {
     public static final String KEY_HASHERS_LOWERCASE = "hashers.lowercase";
 
     private final OutputPanelModel panelModel;
+    private final ProcessorSettingStore processorStore;
     private final EncodeDecodeOptions globalOptions;
     private final Runnable reprocessCallback;
     private final Consumer<String> onProcessorSettingPersisted;
@@ -53,13 +54,21 @@ public class OutputPanelContext {
     /**
      * Constructor with optional callback when a processor setting is persisted. Use when the dialog
      * needs to refresh other panels' toolbars for the same processor.
+     *
+     * @param panelModel the output panel model
+     * @param processorStore store for per-processor overrides (e.g. {@link EncoderConfig.Data})
+     * @param globalOptions legacy global options (for base64 charset, break lines, hashers lowercase)
+     * @param reprocessCallback run when a setting changes
+     * @param onProcessorSettingPersisted optional callback when an override is persisted
      */
     public OutputPanelContext(
             OutputPanelModel panelModel,
+            ProcessorSettingStore processorStore,
             EncodeDecodeOptions globalOptions,
             Runnable reprocessCallback,
             Consumer<String> onProcessorSettingPersisted) {
         this.panelModel = panelModel;
+        this.processorStore = processorStore;
         this.globalOptions = globalOptions;
         this.reprocessCallback = reprocessCallback;
         this.onProcessorSettingPersisted = onProcessorSettingPersisted;
@@ -68,9 +77,10 @@ public class OutputPanelContext {
     /** Constructor without persist callback (e.g. tests). */
     public OutputPanelContext(
             OutputPanelModel panelModel,
+            ProcessorSettingStore processorStore,
             EncodeDecodeOptions globalOptions,
             Runnable reprocessCallback) {
-        this(panelModel, globalOptions, reprocessCallback, null);
+        this(panelModel, processorStore, globalOptions, reprocessCallback, null);
     }
 
     public OutputPanelModel getPanelModel() {
@@ -141,8 +151,8 @@ public class OutputPanelContext {
     }
 
     private String getProcessorOverride(String key) {
-        if (globalOptions == null) return null;
-        return globalOptions.getProcessorSetting(panelModel.getProcessorId(), key);
+        if (processorStore == null) return null;
+        return processorStore.getProcessorSetting(panelModel.getProcessorId(), key);
     }
 
     /**
@@ -193,14 +203,14 @@ public class OutputPanelContext {
     }
 
     private void persistProcessorOverrideIfNeeded(String key, String value) {
-        if (globalOptions == null) return;
+        if (processorStore == null) return;
         String defaultStr = getDefaultValueAsString(key);
         boolean isDefault = defaultStr != null && defaultStr.equals(value);
         String processorId = panelModel.getProcessorId();
         if (isDefault) {
-            globalOptions.clearProcessorSetting(processorId, key);
+            processorStore.clearProcessorSetting(processorId, key);
         } else {
-            globalOptions.setProcessorSetting(processorId, key, value);
+            processorStore.setProcessorSetting(processorId, key, value);
         }
         if (onProcessorSettingPersisted != null) {
             onProcessorSettingPersisted.accept(processorId);

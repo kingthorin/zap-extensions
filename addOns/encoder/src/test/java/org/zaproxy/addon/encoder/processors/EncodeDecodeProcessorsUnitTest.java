@@ -115,7 +115,7 @@ public class EncodeDecodeProcessorsUnitTest extends TestUtils {
         String processorId = EncodeDecodeProcessors.PREDEFINED_PREFIX + "md5hash";
         OutputPanelModel model = new OutputPanelModel();
         model.setProcessorId(processorId);
-        OutputPanelContext context = new OutputPanelContext(model, null, null);
+        OutputPanelContext context = new OutputPanelContext(model, new EncoderConfig.Data(), null, null);
         context.setSetting(OutputPanelContext.KEY_HASHERS_LOWERCASE, true);
         // When
         EncodeDecodeResult result = processors.process(processorId, "admin", context);

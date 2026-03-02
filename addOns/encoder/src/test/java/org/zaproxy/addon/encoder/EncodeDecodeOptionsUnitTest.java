@@ -22,25 +22,12 @@ package org.zaproxy.addon.encoder;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.nullValue;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.withSettings;
 
-import org.apache.commons.configuration.FileConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.quality.Strictness;
 
-/** Unit tests for {@link EncodeDecodeOptions} processor settings. */
+/** Unit tests for {@link EncodeDecodeOptions} (legacy global options). */
 class EncodeDecodeOptionsUnitTest {
-
-    private static final String PROCESSOR_ID = "encoder.predefined.base64encode";
-    private static final String KEY_CHARSET = "base64.charset";
 
     private EncodeDecodeOptions options;
 
@@ -50,94 +37,21 @@ class EncodeDecodeOptionsUnitTest {
     }
 
     @Test
-    void shouldReturnNullProcessorSettingWhenConfigNull() {
-        // Given / When
-        String value = options.getProcessorSetting(PROCESSOR_ID, KEY_CHARSET);
-        // Then
-        assertThat(value, is(nullValue()));
+    void shouldHaveDefaultCharsetWhenConfigNull() {
+        assertThat(options.getBase64Charset(), is(equalTo(EncodeDecodeOptions.DEFAULT_CHARSET)));
     }
 
     @Test
-    void shouldNotThrowWhenSetProcessorSettingAndConfigNull() {
-        // When / Then
-        assertDoesNotThrow(
-                () -> options.setProcessorSetting(PROCESSOR_ID, KEY_CHARSET, "US-ASCII"));
-        assertThat(options.getProcessorSetting(PROCESSOR_ID, KEY_CHARSET), is(nullValue()));
+    void shouldHaveDefaultBreakLinesWhenConfigNull() {
+        assertThat(
+                options.isBase64DoBreakLines(),
+                is(equalTo(EncodeDecodeOptions.DEFAULT_DO_BREAK_LINES)));
     }
 
     @Test
-    void shouldNotThrowWhenClearProcessorSettingAndConfigNull() {
-        // When / Then
-        assertDoesNotThrow(() -> options.clearProcessorSetting(PROCESSOR_ID, KEY_CHARSET));
-        assertThat(options.getProcessorSetting(PROCESSOR_ID, KEY_CHARSET), is(nullValue()));
-    }
-
-    @Test
-    void shouldReturnProcessorSettingWhenConfigSet() throws Exception {
-        // Given
-        FileConfiguration config =
-                mock(FileConfiguration.class, withSettings().strictness(Strictness.LENIENT));
-        given(config.getString("encoder.base64charset", EncodeDecodeOptions.DEFAULT_CHARSET))
-                .willReturn(EncodeDecodeOptions.DEFAULT_CHARSET);
-        given(
-                        config.getBoolean(
-                                "encoder.base64dobreaklines",
-                                EncodeDecodeOptions.DEFAULT_DO_BREAK_LINES))
-                .willReturn(EncodeDecodeOptions.DEFAULT_DO_BREAK_LINES);
-        given(
-                        config.getBoolean(
-                                "encoder.hashers.lowercase",
-                                EncodeDecodeOptions.DEFAULT_DO_LOWERCASE))
-                .willReturn(EncodeDecodeOptions.DEFAULT_DO_LOWERCASE);
-        options.load(config);
-        given(
-                        config.getString(
-                                eq(
-                                        "encoder.processor.encoder_predefined_base64encode.base64_charset")))
-                .willReturn("ISO-8859-1");
-        // When
-        String value = options.getProcessorSetting(PROCESSOR_ID, KEY_CHARSET);
-        // Then
-        assertThat(value, is(equalTo("ISO-8859-1")));
-    }
-
-    @Test
-    void shouldSetConfigWhenSetProcessorSettingAndConfigLoaded() throws Exception {
-        // Given
-        FileConfiguration config =
-                mock(FileConfiguration.class, withSettings().strictness(Strictness.LENIENT));
-        given(config.getString(anyString(), anyString()))
-                .willReturn(EncodeDecodeOptions.DEFAULT_CHARSET);
-        given(config.getBoolean(anyString(), eq(EncodeDecodeOptions.DEFAULT_DO_BREAK_LINES)))
-                .willReturn(EncodeDecodeOptions.DEFAULT_DO_BREAK_LINES);
-        given(config.getBoolean(anyString(), eq(EncodeDecodeOptions.DEFAULT_DO_LOWERCASE)))
-                .willReturn(EncodeDecodeOptions.DEFAULT_DO_LOWERCASE);
-        options.load(config);
-        // When
-        options.setProcessorSetting(PROCESSOR_ID, KEY_CHARSET, "US-ASCII");
-        // Then
-        verify(config)
-                .setProperty(
-                        "encoder.processor.encoder_predefined_base64encode.base64_charset",
-                        "US-ASCII");
-    }
-
-    @Test
-    void shouldClearConfigWhenClearProcessorSettingAndConfigLoaded() throws Exception {
-        // Given
-        FileConfiguration config =
-                mock(FileConfiguration.class, withSettings().strictness(Strictness.LENIENT));
-        given(config.getString(anyString(), anyString()))
-                .willReturn(EncodeDecodeOptions.DEFAULT_CHARSET);
-        given(config.getBoolean(anyString(), eq(EncodeDecodeOptions.DEFAULT_DO_BREAK_LINES)))
-                .willReturn(EncodeDecodeOptions.DEFAULT_DO_BREAK_LINES);
-        given(config.getBoolean(anyString(), eq(EncodeDecodeOptions.DEFAULT_DO_LOWERCASE)))
-                .willReturn(EncodeDecodeOptions.DEFAULT_DO_LOWERCASE);
-        options.load(config);
-        // When
-        options.clearProcessorSetting(PROCESSOR_ID, KEY_CHARSET);
-        // Then
-        verify(config)
-                .clearProperty("encoder.processor.encoder_predefined_base64encode.base64_charset");
+    void shouldHaveDefaultHashersLowerCaseWhenConfigNull() {
+        assertThat(
+                options.isHashersLowerCase(),
+                is(equalTo(EncodeDecodeOptions.DEFAULT_DO_LOWERCASE)));
     }
 }

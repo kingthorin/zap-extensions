@@ -41,7 +41,7 @@ class OutputPanelToolbarFactoryUnitTest {
         factory = new OutputPanelToolbarFactory();
         OutputPanelModel model = new OutputPanelModel();
         model.setProcessorId(PROCESSOR_ID);
-        context = new OutputPanelContext(model, null, null);
+        context = new OutputPanelContext(model, new EncoderConfig.Data(), null, null);
     }
 
     @Test

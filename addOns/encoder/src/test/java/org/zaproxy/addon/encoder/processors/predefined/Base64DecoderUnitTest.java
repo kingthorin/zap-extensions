@@ -86,7 +86,7 @@ class Base64DecoderUnitTest extends ProcessorTests<Base64Decoder> {
         // Given
         OutputPanelModel model = new OutputPanelModel();
         model.setProcessorId("encoder.predefined.base64decode");
-        OutputPanelContext context = new OutputPanelContext(model, null, null);
+        OutputPanelContext context = new OutputPanelContext(model, new EncoderConfig.Data(), null, null);
         context.setSetting(OutputPanelContext.KEY_BASE64_CHARSET, "UTF-8");
         // When
         EncodeDecodeResult result = processor.process("YWRtaW4=", context);

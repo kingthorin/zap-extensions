@@ -1,0 +1,54 @@
+{
+  "tabs": [
+    {
+      "name": "encoder.predefined.tab.encode",
+      "outputPanels": [
+        { "name": "", "processorId": "encoder.predefined.base64encode" },
+        { "name": "", "processorId": "encoder.predefined.base64urlencode" },
+        { "name": "", "processorId": "encoder.predefined.urlencode" },
+        { "name": "", "processorId": "encoder.predefined.fullurlencode" },
+        { "name": "", "processorId": "encoder.predefined.hexencode" },
+        { "name": "", "processorId": "encoder.predefined.htmlencode" },
+        { "name": "", "processorId": "encoder.predefined.fullhtmlencode" },
+        { "name": "", "processorId": "encoder.predefined.javascriptencode" }
+      ]
+    },
+    {
+      "name": "encoder.predefined.tab.decode",
+      "outputPanels": [
+        { "name": "", "processorId": "encoder.predefined.base64decode" },
+        { "name": "", "processorId": "encoder.predefined.base64urldecode" },
+        { "name": "", "processorId": "encoder.predefined.urldecode" },
+        { "name": "", "processorId": "encoder.predefined.fullurldecode" },
+        { "name": "", "processorId": "encoder.predefined.hexdecode" },
+        { "name": "", "processorId": "encoder.predefined.htmldecode" },
+        { "name": "", "processorId": "encoder.predefined.javascriptdecode" }
+      ]
+    },
+    {
+      "name": "encoder.predefined.tab.hash",
+      "outputPanels": [
+        { "name": "", "processorId": "encoder.predefined.sha256hash" },
+        { "name": "", "processorId": "encoder.predefined.sha1hash" },
+        { "name": "", "processorId": "encoder.predefined.md5hash" }
+      ]
+    },
+    {
+      "name": "encoder.predefined.tab.illegalUTF8",
+      "outputPanels": [
+        { "name": "", "processorId": "encoder.predefined.illegalutf8with2byteencoder" },
+        { "name": "", "processorId": "encoder.predefined.illegalutf8with3byteencoder" },
+        { "name": "", "processorId": "encoder.predefined.illegalutf8with4byteencoder" }
+      ]
+    },
+    {
+      "name": "encoder.predefined.tab.unicode",
+      "outputPanels": [
+        { "name": "", "processorId": "encoder.predefined.unicodeencode" },
+        { "name": "", "processorId": "encoder.predefined.unicodedecode" }
+      ]
+    }
+  ],
+  "dividerLocation": 0.2,
+  "processorSettings": {}
+}

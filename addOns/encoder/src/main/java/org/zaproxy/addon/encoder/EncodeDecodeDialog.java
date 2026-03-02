@@ -101,9 +101,11 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
     private JButton resetButton;
     private JSplitPane inputOutputSplitPane = null;
     private final double initialDividerLocation;
+    private final EncoderConfig.Data configData;
 
     public EncodeDecodeDialog(EncoderConfig.Data configData) {
         super();
+        this.configData = configData;
         this.initialDividerLocation = configData.getDividerLocation();
         encodeDecodeProcessors = new EncodeDecodeProcessors();
         toolbarFactory = EncodeDecodeProcessors.getToolbarFactory();
@@ -161,21 +163,19 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
     }
 
     private void resetTabs() {
-        tabs = new ArrayList<>();
-
-        List<TabModel> defaultTabModels = new ArrayList<>();
         try {
-            defaultTabModels.addAll(EncoderConfig.loadDefaultConfig().getTabs());
+            EncoderConfig.Data defaultData = EncoderConfig.loadDefaultConfig();
+            configData.setTabs(defaultData.getTabs());
+            configData.setDividerLocation(defaultData.getDividerLocation());
+            configData.setProcessorSettings(
+                    defaultData.getProcessorSettings() != null
+                            ? new java.util.HashMap<>(defaultData.getProcessorSettings())
+                            : new java.util.HashMap<>());
+            tabs.clear();
+            setTabs(configData.getTabs());
+            EncoderConfig.saveConfig(configData);
         } catch (ConfigurationException | IOException e) {
-            LOGGER.warn("There was a problem loading the default encoder config.", e);
-        }
-
-        setTabs(defaultTabModels);
-
-        try {
-            EncoderConfig.saveConfig(new EncoderConfig.Data(tabs, getDividerProportion()));
-        } catch (ConfigurationException | IOException e) {
-            LOGGER.warn("There was a problem saving the encoder config.", e);
+            LOGGER.warn("There was a problem resetting the encoder config.", e);
         }
     }
 
@@ -392,6 +392,7 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
             OutputPanelContext context =
                     new OutputPanelContext(
                             outputPanelModel,
+                            configData,
                             globalOptions,
                             () -> updateEncodeDecodeFieldForPosition(tabIndex, panelIndex),
                             this::refreshToolbarsForProcessor);
@@ -794,7 +795,9 @@ public class EncodeDecodeDialog extends AbstractFrame implements OptionsChangedL
 
     private void saveSetting() {
         try {
-            EncoderConfig.saveConfig(new EncoderConfig.Data(tabs, getDividerProportion()));
+            configData.setTabs(tabs);
+            configData.setDividerLocation(getDividerProportion());
+            EncoderConfig.saveConfig(configData);
         } catch (Exception e) {
             LOGGER.error("Can not store Encoder Config", e);
         }

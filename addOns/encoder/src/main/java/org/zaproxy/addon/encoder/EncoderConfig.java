@@ -19,13 +19,18 @@
  */
 package org.zaproxy.addon.encoder;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.HierarchicalConfiguration;
 import org.apache.logging.log4j.LogManager;
@@ -37,67 +42,93 @@ public class EncoderConfig {
 
     private static final Logger LOGGER = LogManager.getLogger(EncoderConfig.class);
 
+    private static final String CONFIG_BASE = "addOnData/encoder/config/";
+    private static final String CONFIG_FILE = CONFIG_BASE + "encoder-config.json";
+    private static final String CONFIG_FILE_XML = CONFIG_BASE + "encoder-config.xml";
+    private static final String DEFAULT_CONFIG_FILE_NAME = "encoder-default.json";
+    private static final String DEFAULT_BUNDLED_CONFIG_FILE = "resources/" + DEFAULT_CONFIG_FILE_NAME;
+
     private static final String TABS_KEY = "tabs";
     private static final String TAB_KEY = "tab";
     private static final String TAB_PATH = TABS_KEY + "." + TAB_KEY;
-    private static final String TAB_NAME_KEY = "name";
     private static final String OUTPUT_PANELS_KEY = "outputpanels";
     private static final String OUTPUT_PANEL_KEY = "outputpanel";
     private static final String OUTPUT_PANEL_PATH = OUTPUT_PANELS_KEY + "." + OUTPUT_PANEL_KEY;
+    private static final String TAB_NAME_KEY = "name";
     private static final String OUTPUT_PANEL_NAME_KEY = "name";
     private static final String OUTPUT_PANEL_SCRIPT_KEY = "processorId";
-    private static final String CONFIG_BASE = "addOnData/encoder/config/";
-    private static final String CONFIG_FILE = CONFIG_BASE + "encoder-config.xml";
-    private static final String DEFAULT_CONFIG_FILE_NAME = "encoder-default.xml";
-    private static final String DEFAULT_CONFIG_FILE = CONFIG_BASE + DEFAULT_CONFIG_FILE_NAME;
-    private static final String DEFAULT_BUNDLED_CONFIG_FILE =
-            "resources/" + DEFAULT_CONFIG_FILE_NAME;
-
     private static final String DIVIDER_LOCATION_KEY = "dividerLocation";
+
+    private static final ObjectMapper OBJECT_MAPPER =
+            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
     private EncoderConfig() {
         // Utility Class
     }
 
     public static Data loadConfig() throws ConfigurationException, IOException {
-        Path config = getConfigPath(CONFIG_FILE);
-        if (Files.notExists(config)) {
-            return loadDefaultConfig();
+        Path configPath = getConfigPath(CONFIG_FILE);
+        Path configPathXml = getConfigPath(CONFIG_FILE_XML);
+
+        if (Files.exists(configPath)) {
+            return loadConfigFromJson(configPath);
         }
-        return loadConfig(config);
+        if (Files.exists(configPathXml)) {
+            Data data = loadConfigFromXml(configPathXml);
+            saveConfig(data);
+            try {
+                Files.delete(configPathXml);
+            } catch (IOException e) {
+                LOGGER.warn("Could not remove legacy config file {}", configPathXml, e);
+            }
+            return data;
+        }
+        return loadDefaultConfig();
     }
 
+    /**
+     * Loads the default config from the bundled resource only. Does not write to disk. Used for
+     * first run and for reset.
+     */
     public static Data loadDefaultConfig() throws ConfigurationException, IOException {
-        Path defaultConfig = getConfigPath(DEFAULT_CONFIG_FILE);
-        if (Files.notExists(defaultConfig)) {
-            Files.createDirectories(defaultConfig.getParent());
-            try (InputStream in =
-                    EncoderConfig.class.getResourceAsStream(DEFAULT_BUNDLED_CONFIG_FILE)) {
-                Files.copy(in, defaultConfig);
-            } catch (IOException e) {
-                LOGGER.warn("Failed to create the default configuration file.", e);
-
-                try (InputStream in =
-                        EncoderConfig.class.getResourceAsStream(DEFAULT_BUNDLED_CONFIG_FILE)) {
-                    return loadConfig(new ZapXmlConfiguration(in));
-                } catch (IOException e1) {
-                    LOGGER.error("Failed to load the default bundled configuration file.", e1);
-                }
+        try (InputStream in =
+                EncoderConfig.class.getResourceAsStream(DEFAULT_BUNDLED_CONFIG_FILE)) {
+            if (in == null) {
+                LOGGER.error("Bundled config resource not found: {}", DEFAULT_BUNDLED_CONFIG_FILE);
                 return new Data();
             }
+            return OBJECT_MAPPER.readValue(in, Data.class);
+        } catch (JsonProcessingException e) {
+            LOGGER.error("Failed to parse bundled encoder config", e);
+            return new Data();
         }
-        return loadConfig(defaultConfig);
     }
 
     private static Path getConfigPath(String configName) {
         return Paths.get(Constant.getZapHome(), configName);
     }
 
-    private static Data loadConfig(Path file) throws ConfigurationException {
-        return loadConfig(new ZapXmlConfiguration(file.toFile()));
+    static Data loadConfigFromJson(Path file) throws IOException {
+        Data data = OBJECT_MAPPER.readValue(file.toFile(), Data.class);
+        if (data.getProcessorSettings() == null) {
+            data.setProcessorSettings(new HashMap<>());
+        }
+        data.validateDividerLocation();
+        return data;
     }
 
-    private static Data loadConfig(ZapXmlConfiguration config) {
+    public static void saveConfig(Data data) throws ConfigurationException, IOException {
+        Path path = getConfigPath(CONFIG_FILE);
+        Files.createDirectories(path.getParent());
+        OBJECT_MAPPER.writeValue(path.toFile(), data);
+    }
+
+    /**
+     * One-time migration from legacy XML config. Reads tabs and divider only; processorSettings
+     * remain empty.
+     */
+    private static Data loadConfigFromXml(Path file) throws ConfigurationException {
+        ZapXmlConfiguration config = new ZapXmlConfiguration(file.toFile());
         List<TabModel> tabs = new ArrayList<>();
         List<HierarchicalConfiguration> tabConfigs = config.configurationsAt(TAB_PATH);
         for (HierarchicalConfiguration tabConfig : tabConfigs) {
@@ -120,69 +151,33 @@ public class EncoderConfig {
             tab.setOutputPanels(panels);
             tabs.add(tab);
         }
-        return new Data(
-                tabs, config.getDouble(DIVIDER_LOCATION_KEY, Data.DEFAULT_DIVIDER_LOCATION));
+        double dividerLocation =
+                config.getDouble(DIVIDER_LOCATION_KEY, Data.DEFAULT_DIVIDER_LOCATION);
+        Data data = new Data(tabs, dividerLocation);
+        data.setProcessorSettings(new HashMap<>());
+        return data;
     }
 
-    public static void saveConfig(Data data) throws ConfigurationException, IOException {
-        saveConfig(getConfigPath(CONFIG_FILE), data);
-    }
+    /** Holder for encoder config: tab layout, divider position, and per-processor toolbar settings. */
+    public static final class Data implements ProcessorSettingStore {
 
-    private static void saveConfig(Path file, Data data)
-            throws ConfigurationException, IOException {
-        List<TabModel> tabs = data.getTabs();
-        ZapXmlConfiguration config = new ZapXmlConfiguration();
-        int t = 0;
-        for (TabModel tab : tabs) {
-            String elementTabKey = TAB_PATH + "(" + t++ + ").";
-            config.setProperty(elementTabKey + TAB_NAME_KEY, tab.getName());
-            int p = 0;
-            for (OutputPanelModel panel : tab.getOutputPanels()) {
-                String elementPanelKey = elementTabKey + OUTPUT_PANEL_PATH + "(" + p++ + ").";
-                config.setProperty(elementPanelKey + OUTPUT_PANEL_NAME_KEY, panel.getName());
-                config.setProperty(
-                        elementPanelKey + OUTPUT_PANEL_SCRIPT_KEY, panel.getProcessorId());
-            }
-        }
-        config.setProperty(DIVIDER_LOCATION_KEY, data.getDividerLocation());
-
-        Files.createDirectories(file.getParent());
-        config.save(file.toFile());
-    }
-
-    /** Holder for encoder config: tab layout and divider position. */
-    public static final class Data {
         /** Default proportion (0.0–1.0) for the input area in the main dialog. */
         public static final double DEFAULT_DIVIDER_LOCATION = 0.2;
 
-        private final List<TabModel> tabs;
-        private final double dividerLocation;
+        private List<TabModel> tabs;
+        private double dividerLocation;
+        private Map<String, Map<String, String>> processorSettings;
 
-        /**
-         * Creates data with default tabs and divider location from config, or empty tabs and
-         * default divider if loading fails.
-         */
+        /** No-arg constructor for Jackson; also used when default load fails. */
         public Data() {
-            Data fromDefault = null;
-            try {
-                fromDefault = EncoderConfig.loadDefaultConfig();
-            } catch (ConfigurationException | IOException e) {
-                LOGGER.warn(
-                        "Failed to load default encoder config, using empty tabs and default divider.",
-                        e);
-            }
-            if (fromDefault != null) {
-                this.tabs = new ArrayList<>(fromDefault.getTabs());
-                this.dividerLocation = fromDefault.getDividerLocation();
-            } else {
-                this.tabs = new ArrayList<>();
-                this.dividerLocation = DEFAULT_DIVIDER_LOCATION;
-            }
+            this.tabs = new ArrayList<>();
+            this.dividerLocation = DEFAULT_DIVIDER_LOCATION;
+            this.processorSettings = new HashMap<>();
         }
 
         /**
-         * Validates divider location: if in range 0.0–1.0 it is used, otherwise the default is
-         * used.
+         * Creates data with the given tabs and divider. Divider is clamped to 0.0–1.0. Processor
+         * settings are empty.
          */
         public Data(List<TabModel> tabs, double dividerLocation) {
             this.tabs = new ArrayList<>(tabs);
@@ -190,14 +185,77 @@ public class EncoderConfig {
                     dividerLocation >= 0.0 && dividerLocation <= 1.0
                             ? dividerLocation
                             : DEFAULT_DIVIDER_LOCATION;
+            this.processorSettings = new HashMap<>();
+        }
+
+        void validateDividerLocation() {
+            if (dividerLocation < 0.0 || dividerLocation > 1.0) {
+                this.dividerLocation = DEFAULT_DIVIDER_LOCATION;
+            }
+        }
+
+        @Override
+        public String getProcessorSetting(String processorId, String key) {
+            if (processorSettings == null) return null;
+            Map<String, String> perProcessor = processorSettings.get(processorId);
+            return perProcessor != null ? perProcessor.get(key) : null;
+        }
+
+        @Override
+        public void setProcessorSetting(String processorId, String key, String value) {
+            if (processorSettings == null) {
+                processorSettings = new HashMap<>();
+            }
+            processorSettings
+                    .computeIfAbsent(processorId, k -> new HashMap<>())
+                    .put(key, value);
+        }
+
+        @Override
+        public void clearProcessorSetting(String processorId, String key) {
+            if (processorSettings == null) return;
+            Map<String, String> perProcessor = processorSettings.get(processorId);
+            if (perProcessor != null) {
+                perProcessor.remove(key);
+                if (perProcessor.isEmpty()) {
+                    processorSettings.remove(processorId);
+                }
+            }
         }
 
         public List<TabModel> getTabs() {
-            return new ArrayList<>(tabs);
+            return tabs != null ? new ArrayList<>(tabs) : new ArrayList<>();
+        }
+
+        public void setTabs(List<TabModel> tabs) {
+            this.tabs = tabs != null ? new ArrayList<>(tabs) : new ArrayList<>();
         }
 
         public double getDividerLocation() {
             return dividerLocation;
+        }
+
+        public void setDividerLocation(double dividerLocation) {
+            this.dividerLocation =
+                    dividerLocation >= 0.0 && dividerLocation <= 1.0
+                            ? dividerLocation
+                            : DEFAULT_DIVIDER_LOCATION;
+        }
+
+        public Map<String, Map<String, String>> getProcessorSettings() {
+            if (processorSettings == null) {
+                return new HashMap<>();
+            }
+            Map<String, Map<String, String>> copy = new HashMap<>();
+            for (Map.Entry<String, Map<String, String>> e : processorSettings.entrySet()) {
+                copy.put(e.getKey(), new HashMap<>(e.getValue()));
+            }
+            return copy;
+        }
+
+        public void setProcessorSettings(Map<String, Map<String, String>> processorSettings) {
+            this.processorSettings =
+                    processorSettings != null ? new HashMap<>(processorSettings) : new HashMap<>();
         }
     }
 }

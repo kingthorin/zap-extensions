@@ -51,8 +51,9 @@ class OutputPanelContextUnitTest {
     @Test
     void shouldReturnInstanceValueFirstForGetString() {
         // Given
+        EncoderConfig.Data store = new EncoderConfig.Data();
         OutputPanelContext ctx =
-                new OutputPanelContext(panelModel, globalOptions, reprocessCallback);
+                new OutputPanelContext(panelModel, store, globalOptions, reprocessCallback);
         ctx.setSetting(OutputPanelContext.KEY_BASE64_CHARSET, "US-ASCII");
         // When
         String value = ctx.getString(OutputPanelContext.KEY_BASE64_CHARSET);
@@ -63,10 +64,10 @@ class OutputPanelContextUnitTest {
     @Test
     void shouldFallBackToProcessorOverrideForGetStringWhenInstanceNotSet() {
         // Given
-        given(globalOptions.getProcessorSetting(panelModel.getProcessorId(), "base64.charset"))
-                .willReturn("ISO-8859-1");
+        EncoderConfig.Data store = new EncoderConfig.Data();
+        store.setProcessorSetting(panelModel.getProcessorId(), "base64.charset", "ISO-8859-1");
         OutputPanelContext ctx =
-                new OutputPanelContext(panelModel, globalOptions, reprocessCallback);
+                new OutputPanelContext(panelModel, store, globalOptions, reprocessCallback);
         // When
         String value = ctx.getString(OutputPanelContext.KEY_BASE64_CHARSET);
         // Then
@@ -77,8 +78,9 @@ class OutputPanelContextUnitTest {
     void shouldFallBackToGlobalDefaultForGetStringWhenNoOverride() {
         // Given
         given(globalOptions.getBase64Charset()).willReturn("UTF-8");
+        EncoderConfig.Data store = new EncoderConfig.Data();
         OutputPanelContext ctx =
-                new OutputPanelContext(panelModel, globalOptions, reprocessCallback);
+                new OutputPanelContext(panelModel, store, globalOptions, reprocessCallback);
         // When
         String value = ctx.getString(OutputPanelContext.KEY_BASE64_CHARSET);
         // Then
@@ -88,7 +90,8 @@ class OutputPanelContextUnitTest {
     @Test
     void shouldFallBackToHardDefaultForGetStringWhenGlobalOptionsNull() {
         // Given
-        OutputPanelContext ctx = new OutputPanelContext(panelModel, null, reprocessCallback);
+        OutputPanelContext ctx =
+                new OutputPanelContext(panelModel, new EncoderConfig.Data(), null, reprocessCallback);
         // When
         String value = ctx.getString(OutputPanelContext.KEY_BASE64_CHARSET);
         // Then
@@ -98,8 +101,9 @@ class OutputPanelContextUnitTest {
     @Test
     void shouldReturnInstanceValueFirstForGetBoolean() {
         // Given
+        EncoderConfig.Data store = new EncoderConfig.Data();
         OutputPanelContext ctx =
-                new OutputPanelContext(panelModel, globalOptions, reprocessCallback);
+                new OutputPanelContext(panelModel, store, globalOptions, reprocessCallback);
         ctx.setSetting(OutputPanelContext.KEY_BASE64_BREAK_LINES, false);
         // When
         boolean value = ctx.getBoolean(OutputPanelContext.KEY_BASE64_BREAK_LINES);
@@ -110,7 +114,8 @@ class OutputPanelContextUnitTest {
     @Test
     void shouldFallBackToHardDefaultForHashersWhenGlobalOptionsNull() {
         // Given
-        OutputPanelContext ctx = new OutputPanelContext(panelModel, null, reprocessCallback);
+        OutputPanelContext ctx =
+                new OutputPanelContext(panelModel, new EncoderConfig.Data(), null, reprocessCallback);
         // When
         boolean value = ctx.getBoolean(OutputPanelContext.KEY_HASHERS_LOWERCASE);
         // Then
@@ -120,8 +125,9 @@ class OutputPanelContextUnitTest {
     @Test
     void shouldInvokeCallbackWhenRequestReprocess() {
         // Given
+        EncoderConfig.Data store = new EncoderConfig.Data();
         OutputPanelContext ctx =
-                new OutputPanelContext(panelModel, globalOptions, reprocessCallback);
+                new OutputPanelContext(panelModel, store, globalOptions, reprocessCallback);
         // When
         ctx.requestReprocess();
         // Then
@@ -131,7 +137,9 @@ class OutputPanelContextUnitTest {
     @Test
     void shouldNotThrowWhenRequestReprocessAndCallbackNull() {
         // Given
-        OutputPanelContext ctx = new OutputPanelContext(panelModel, globalOptions, null);
+        EncoderConfig.Data store = new EncoderConfig.Data();
+        OutputPanelContext ctx =
+                new OutputPanelContext(panelModel, store, globalOptions, null);
         // When
         ctx.requestReprocess();
         // Then
@@ -144,8 +152,9 @@ class OutputPanelContextUnitTest {
     void shouldInvokeReprocessCallbackWhenSetSetting() {
         // Given
         given(globalOptions.getBase64Charset()).willReturn(EncodeDecodeOptions.DEFAULT_CHARSET);
+        EncoderConfig.Data store = new EncoderConfig.Data();
         OutputPanelContext ctx =
-                new OutputPanelContext(panelModel, globalOptions, reprocessCallback);
+                new OutputPanelContext(panelModel, store, globalOptions, reprocessCallback);
         // When
         ctx.setSetting(OutputPanelContext.KEY_BASE64_CHARSET, "UTF-8");
         // Then

@@ -26,6 +26,7 @@ import static org.hamcrest.Matchers.is;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
@@ -36,12 +37,11 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.parosproxy.paros.Constant;
 import org.zaproxy.zap.testutils.TestUtils;
-import org.zaproxy.zap.utils.ZapXmlConfiguration;
 
-/** Unit test for {@link EncoderConfig} (tabs and divider location). */
+/** Unit test for {@link EncoderConfig} (tabs, divider location, processor settings). */
 class EncoderConfigUnitTest extends TestUtils {
 
-    private static final String CONFIG_PATH = "addOnData/encoder/config/encoder-config.xml";
+    private static final String CONFIG_PATH = "addOnData/encoder/config/encoder-config.json";
 
     @BeforeEach
     void setUp() throws Exception {
@@ -60,19 +60,19 @@ class EncoderConfigUnitTest extends TestUtils {
     }
 
     @Test
-    void noArgDataShouldUseDefaultConfigWhenAvailable() throws Exception {
-        // Given default config is loadable (setUpZap provides ZAP home)
+    void loadDefaultConfigShouldReturnBundledTabsAndDivider() throws Exception {
         // When
-        EncoderConfig.Data fromLoad = EncoderConfig.loadDefaultConfig();
-        EncoderConfig.Data fromNoArg = new EncoderConfig.Data();
+        EncoderConfig.Data data = EncoderConfig.loadDefaultConfig();
         // Then
-        assertThat(fromNoArg.getDividerLocation(), is(equalTo(fromLoad.getDividerLocation())));
-        assertThat(fromNoArg.getTabs().size(), is(equalTo(fromLoad.getTabs().size())));
-        for (int i = 0; i < fromLoad.getTabs().size(); i++) {
-            assertThat(
-                    fromNoArg.getTabs().get(i).getName(),
-                    is(equalTo(fromLoad.getTabs().get(i).getName())));
-        }
+        assertThat(data.getDividerLocation(), is(equalTo(EncoderConfig.Data.DEFAULT_DIVIDER_LOCATION)));
+        assertThat(data.getTabs().isEmpty(), is(equalTo(false)));
+    }
+
+    @Test
+    void noArgDataShouldHaveDefaultDividerAndEmptyTabs() {
+        EncoderConfig.Data data = new EncoderConfig.Data();
+        assertThat(data.getDividerLocation(), is(equalTo(EncoderConfig.Data.DEFAULT_DIVIDER_LOCATION)));
+        assertThat(data.getTabs().isEmpty(), is(equalTo(true)));
     }
 
     @Test
@@ -92,15 +92,25 @@ class EncoderConfigUnitTest extends TestUtils {
         // Given
         Path configFile = Paths.get(Constant.getZapHome(), CONFIG_PATH);
         Files.createDirectories(configFile.getParent());
-        ZapXmlConfiguration config = new ZapXmlConfiguration();
-        config.setProperty("dividerLocation", 1.5);
-        config.save(configFile.toFile());
+        String json = "{\"tabs\":[],\"dividerLocation\":1.5,\"processorSettings\":{}}";
+        Files.write(configFile, json.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         // When
         EncoderConfig.Data data = EncoderConfig.loadConfig();
         // Then
         assertThat(
                 data.getDividerLocation(),
                 is(equalTo(EncoderConfig.Data.DEFAULT_DIVIDER_LOCATION)));
+    }
+
+    @Test
+    void shouldRoundTripProcessorSettings() throws Exception {
+        EncoderConfig.Data data = new EncoderConfig.Data();
+        data.setProcessorSetting("encoder.predefined.base64encode", "base64.charset", "ISO-8859-1");
+        data.setProcessorSetting("encoder.predefined.base64encode", "base64.breakLines", "false");
+        EncoderConfig.saveConfig(data);
+        EncoderConfig.Data loaded = EncoderConfig.loadConfig();
+        assertThat(loaded.getProcessorSetting("encoder.predefined.base64encode", "base64.charset"), is(equalTo("ISO-8859-1")));
+        assertThat(loaded.getProcessorSetting("encoder.predefined.base64encode", "base64.breakLines"), is(equalTo("false")));
     }
 
     @ParameterizedTest

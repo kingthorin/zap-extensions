@@ -58,7 +58,7 @@ class Md5HasherUnitTest extends ProcessorTests<Md5Hasher> {
         // Given
         OutputPanelModel model = new OutputPanelModel();
         model.setProcessorId("encoder.predefined.md5hash");
-        OutputPanelContext context = new OutputPanelContext(model, null, null);
+        OutputPanelContext context = new OutputPanelContext(model, new EncoderConfig.Data(), null, null);
         context.setSetting(OutputPanelContext.KEY_HASHERS_LOWERCASE, true);
         // When
         EncodeDecodeResult result = processor.process("admin", context);
@@ -72,7 +72,7 @@ class Md5HasherUnitTest extends ProcessorTests<Md5Hasher> {
         // Given
         OutputPanelModel model = new OutputPanelModel();
         model.setProcessorId("encoder.predefined.md5hash");
-        OutputPanelContext context = new OutputPanelContext(model, null, null);
+        OutputPanelContext context = new OutputPanelContext(model, new EncoderConfig.Data(), null, null);
         context.setSetting(OutputPanelContext.KEY_HASHERS_LOWERCASE, false);
         // When
         EncodeDecodeResult result = processor.process("admin", context);
