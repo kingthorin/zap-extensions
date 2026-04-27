@@ -7,7 +7,8 @@
 
 // Script variable to use when uninstalling
 var apiimpltype = Java.type("org.zaproxy.zap.extension.api.ApiImplementor");
-var apiimpl = new apiimpltype() {
+var apiimplexttype = Java.extend(apiimpltype);
+var apiimpl = new apiimplexttype({
   getPrefix: function() {
     return "extenderApiExample";
   },
@@ -28,8 +29,8 @@ var apiimpl = new apiimpltype() {
     } else {
       return Java.super(this).handleApiAction(name, params);
     }
-  }
-};
+  },
+});
 apiimpl.addApiView(new org.zaproxy.zap.extension.api.ApiView("exampleView", ["mandParam"], ["optParam1", "optParam2"]));
 apiimpl.addApiAction(new org.zaproxy.zap.extension.api.ApiAction("exampleAction", ["mandParam"], ["optParam1", "optParam2"]));
 

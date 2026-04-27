@@ -20,7 +20,7 @@ const ArrayList = Java.type("java.util.ArrayList");
 const NAME = "example-tool";
 
 function newTool() {
-  return new (Java.extend(McpTool)) {
+  return new (Java.extend(McpTool))({
     getName: function() {
       return NAME;
     },
@@ -43,8 +43,8 @@ function newTool() {
         throw new McpToolException("The message parameter is required");
       }
       return McpToolResult.success("Echo: " + message);
-    }
-  };
+    },
+  });
 }
 
 /**
