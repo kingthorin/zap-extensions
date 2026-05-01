@@ -26,12 +26,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import org.apache.commons.collections4.Trie;
 import org.apache.commons.collections4.trie.PatriciaTrie;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.commons.io.input.BOMInputStream;
+
 // TEMPORARY (JMH forks lack log4j-api on classpath): restore when removing src/jmh benchmark setup.
 // import org.apache.logging.log4j.LogManager;
 // import org.apache.logging.log4j.Logger;

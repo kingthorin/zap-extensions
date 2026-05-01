@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.SplittableRandom;
 import java.util.concurrent.TimeUnit;
+import org.apache.commons.collections4.Trie;
 import org.apache.commons.csv.CSVRecord;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -38,14 +39,17 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
 /**
- * TEMPORARY — remove with {@code jmh} source set. PatriciaTrie (via {@link BinList#get(String)}) vs
- * {@link java.util.HashMap} with the same probe sequence.
+ * TEMPORARY — remove with {@code jmh} source set.
+ *
+ * <p>Fair comparison: same {@link BinList#lookupLikeGet} probe sequence on a {@link Trie} built in
+ * {@code @Setup} vs a {@link java.util.HashMap} built from the same CSV rows (no {@link
+ * BinList#getSingleton()} on the trie path).
  */
-@BenchmarkMode(Mode.AverageTime)
+@BenchmarkMode({Mode.AverageTime, Mode.SampleTime})
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
-@Fork(2)
-@Warmup(iterations = 2, time = 2, timeUnit = TimeUnit.SECONDS)
-@Measurement(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
+@Fork(5)
+@Warmup(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 5, time = 2, timeUnit = TimeUnit.SECONDS)
 public class BinListLookupBenchmark {
 
     static final int CANDIDATE_POOL = 4096;
@@ -53,7 +57,7 @@ public class BinListLookupBenchmark {
     @State(Scope.Benchmark)
     public static class SharedState {
         String[] candidates;
-        BinList binList;
+        Trie<String, BinRecord> trie;
         Map<String, BinRecord> map;
 
         @Setup
@@ -72,8 +76,8 @@ public class BinListLookupBenchmark {
             for (int i = 0; i < CANDIDATE_POOL; i++) {
                 candidates[i] = bins.get(rnd.nextInt(n)) + "1234567890";
             }
+            trie = BinList.buildTrieFromRecords(records);
             map = BinList.buildHashMapFromRecords(records);
-            binList = BinList.getSingleton();
         }
     }
 
@@ -85,7 +89,7 @@ public class BinListLookupBenchmark {
     @Benchmark
     public void lookupPatriciaTrie(SharedState shared, ThreadState ts, Blackhole bh) {
         String c = shared.candidates[ts.idx++ & (CANDIDATE_POOL - 1)];
-        bh.consume(shared.binList.get(c));
+        bh.consume(BinList.lookupLikeGet(shared.trie, c));
     }
 
     @Benchmark
