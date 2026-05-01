@@ -1,5 +1,9 @@
 import org.zaproxy.gradle.addon.AddOnStatus
 
+plugins {
+    alias(libs.plugins.jmh)
+}
+
 description = "A common library, for use by other add-ons."
 
 zapAddOn {
@@ -37,4 +41,20 @@ dependencies {
     implementation(libs.commonlib.apache.commons.collections4)
 
     testImplementation(project(":testutils"))
+
+    jmh(libs.commonlib.jmh.core)
+    jmhAnnotationProcessor(libs.commonlib.jmh.generator)
+    jmhImplementation(libs.commonlib.jol)
+}
+
+jmh {
+    jmhVersion.set(libs.versions.jmh.get())
+}
+
+tasks.register<JavaExec>("binListStructureFootprint") {
+    group = "verification"
+    description =
+        "TEMPORARY: prints JOL footprint for PatriciaTrie vs HashMap (same package as BinList benchmarks)."
+    classpath = sourceSets.named("jmh").get().runtimeClasspath
+    mainClass.set("org.zaproxy.addon.commonlib.binlist.BinListStructureFootprint")
 }

@@ -23,13 +23,18 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.commons.collections4.Trie;
 import org.apache.commons.collections4.trie.PatriciaTrie;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.commons.io.input.BOMInputStream;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+// TEMPORARY (JMH forks lack log4j-api on classpath): restore when removing src/jmh benchmark setup.
+// import org.apache.logging.log4j.LogManager;
+// import org.apache.logging.log4j.Logger;
 
 /**
  * The list of {@link BinRecord}s for credit card numbers.
@@ -38,7 +43,7 @@ import org.apache.logging.log4j.Logger;
  */
 public final class BinList {
 
-    private static final Logger LOGGER = LogManager.getLogger(BinList.class);
+    // private static final Logger LOGGER = LogManager.getLogger(BinList.class);
     private static final String BINLIST_FILE = "binlist-data.csv";
 
     private static BinList singleton;
@@ -62,26 +67,28 @@ public final class BinList {
         }
     }
 
-    private static Trie<String, BinRecord> createTrie() {
-        Trie<String, BinRecord> trie = new PatriciaTrie<>();
-        Iterable<CSVRecord> records;
+    /** Package-private for temporary JMH benchmarks in {@code src/jmh}. */
+    static List<CSVRecord> loadCsvRecords() {
         try (InputStream in = BinList.class.getResourceAsStream(BINLIST_FILE);
                 BOMInputStream bomStream = BOMInputStream.builder().setInputStream(in).get();
                 InputStreamReader inStream =
                         new InputStreamReader(bomStream, StandardCharsets.UTF_8)) {
 
-            records =
-                    CSVFormat.Builder.create()
-                            .setHeader()
-                            .setSkipHeaderRecord(true)
-                            .get()
-                            .parse(inStream)
-                            .getRecords();
+            return CSVFormat.Builder.create()
+                    .setHeader()
+                    .setSkipHeaderRecord(true)
+                    .get()
+                    .parse(inStream)
+                    .getRecords();
         } catch (NullPointerException | IOException e) {
-            LOGGER.warn("Exception while loading: {}", BINLIST_FILE, e);
-            return trie;
+            // LOGGER.warn("Exception while loading: {}", BINLIST_FILE, e);
+            return List.of();
         }
+    }
 
+    /** Package-private for temporary JMH benchmarks in {@code src/jmh}. */
+    static Trie<String, BinRecord> buildTrieFromRecords(Iterable<CSVRecord> records) {
+        Trie<String, BinRecord> trie = new PatriciaTrie<>();
         for (CSVRecord rec : records) {
             trie.put(
                     rec.get("bin"),
@@ -94,17 +101,45 @@ public final class BinList {
         return trie;
     }
 
-    /**
-     * Gets the {@code BinRecord} for the given (candidate) credit card number.
-     *
-     * @param candidate the candidate credit card number.
-     * @return the {@code BinRecord}, or {@code null} if no match found.
-     */
-    public BinRecord get(String candidate) {
+    /** Package-private for temporary JMH benchmarks in {@code src/jmh}. */
+    static Map<String, BinRecord> buildHashMapFromRecords(Iterable<CSVRecord> records) {
+        Map<String, BinRecord> map = new HashMap<>();
+        for (CSVRecord rec : records) {
+            map.put(
+                    rec.get("bin"),
+                    new BinRecord(
+                            rec.get("bin"),
+                            rec.get("brand"),
+                            rec.get("category"),
+                            rec.get("issuer")));
+        }
+        return map;
+    }
+
+    private static Trie<String, BinRecord> createTrie() {
+        return buildTrieFromRecords(loadCsvRecords());
+    }
+
+    /** Same probe order as {@link #get(String)} but for a {@link Map} (exact keys only). */
+    static BinRecord lookupLikeGet(Map<String, BinRecord> map, String candidate) {
+        BinRecord binRec = map.get(candidate);
+        if (binRec == null) {
+            binRec = map.get(candidate.substring(0, 6));
+        }
+        if (binRec == null) {
+            binRec = map.get(candidate.substring(0, 8));
+        }
+        if (binRec == null) {
+            binRec = map.get(candidate.substring(0, 5));
+        }
+        if (binRec == null) {
+            binRec = map.get(candidate.substring(0, 7));
+        }
+        return binRec;
+    }
+
+    static BinRecord lookupLikeGet(Trie<String, BinRecord> trie, String candidate) {
         BinRecord binRec = trie.get(candidate);
-        // Per https://github.com/iannuttall/binlist-data the collection should have BINs 6-8 but
-        // based on my searching there are actually entries 5-8. The following are ordered based
-        // on count of occurrence
         if (binRec == null) {
             binRec = trie.get(candidate.substring(0, 6));
         }
@@ -118,5 +153,17 @@ public final class BinList {
             binRec = trie.get(candidate.substring(0, 7));
         }
         return binRec;
+    }
+
+    /**
+     * Gets the {@code BinRecord} for the given (candidate) credit card number.
+     *
+     * @param candidate the candidate credit card number.
+     * @return the {@code BinRecord}, or {@code null} if no match found.
+     */
+    public BinRecord get(String candidate) {
+        // Per https://github.com/iannuttall/binlist-data the collection should have BINs 6-8 but
+        // based on my searching there are actually entries 5-8. Probe order matches that data.
+        return lookupLikeGet(trie, candidate);
     }
 }
