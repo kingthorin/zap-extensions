@@ -39,7 +39,7 @@ import org.parosproxy.paros.model.Model;
 import org.zaproxy.zap.extension.script.ExtensionScript;
 import org.zaproxy.zap.extension.script.ScriptType;
 import org.zaproxy.zap.extension.script.ScriptWrapper;
-import org.zaproxy.zap.extension.scripts.zest.ZestScriptDiagnosticSource.ZestScriptRunDiagnostic;
+import org.zaproxy.zap.extension.scripts.diagnostics.ScriptDiagnosticSource.RunFailureDiagnostic;
 import org.zaproxy.zap.users.User;
 
 /** Unit test for {@link ZestScriptWrapper}. */
@@ -108,30 +108,30 @@ class ZestScriptWrapperUnitTest {
     @Test
     void shouldNotCopyLastRunDiagnosticOntoClone() {
         ZestScriptWrapper wrapper = new ZestScriptWrapper(createMockScriptWrapper());
-        wrapper.setLastRunDiagnostic(
-                new ZestScriptRunDiagnostic(
+        wrapper.setLastRunFailure(
+                new RunFailureDiagnostic(
                         "stale diagnostics from a prior run", "", -1, -1, "", null));
 
         ZestScriptWrapper clone = wrapper.clone();
 
-        assertThat(clone.getLastRunDiagnostic().isPresent(), is(false));
+        assertThat(clone.getLastRunFailure().isPresent(), is(false));
     }
 
     @Test
     void shouldReturnEmptyLastRunDiagnosticWhenNoFailureRecorded() {
         ZestScriptWrapper wrapper = new ZestScriptWrapper(createMockScriptWrapper());
 
-        assertThat(wrapper.getLastRunDiagnostic().isPresent(), is(false));
+        assertThat(wrapper.getLastRunFailure().isPresent(), is(false));
     }
 
     @Test
     void shouldReturnLastRunDiagnosticSnapshot() {
         ZestScriptWrapper wrapper = new ZestScriptWrapper(createMockScriptWrapper());
-        wrapper.setLastRunDiagnostic(
-                new ZestScriptRunDiagnostic(
+        wrapper.setLastRunFailure(
+                new RunFailureDiagnostic(
                         "chain ctx", "ZestFoo - detail", 2, 13, "ZestClientFoo", "b64png"));
 
-        Optional<ZestScriptRunDiagnostic> diagnostic = wrapper.getLastRunDiagnostic();
+        Optional<RunFailureDiagnostic> diagnostic = wrapper.getLastRunFailure();
 
         assertThat(diagnostic.isPresent(), is(true));
         assertThat(diagnostic.get().context(), is(equalTo("chain ctx")));
@@ -145,11 +145,10 @@ class ZestScriptWrapperUnitTest {
     @Test
     void shouldClearLastRunDiagnostic() {
         ZestScriptWrapper wrapper = new ZestScriptWrapper(createMockScriptWrapper());
-        wrapper.setLastRunDiagnostic(
-                new ZestScriptRunDiagnostic("ctx", "detail", 1, 0, "ZestFoo", null));
+        wrapper.setLastRunFailure(new RunFailureDiagnostic("ctx", "detail", 1, 0, "ZestFoo", null));
 
-        wrapper.setLastRunDiagnostic(null);
+        wrapper.clearRunDiagnostics();
 
-        assertThat(wrapper.getLastRunDiagnostic().isPresent(), is(false));
+        assertThat(wrapper.getLastRunFailure().isPresent(), is(false));
     }
 }

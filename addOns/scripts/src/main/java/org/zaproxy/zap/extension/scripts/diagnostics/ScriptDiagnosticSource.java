@@ -17,17 +17,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.zaproxy.zap.extension.scripts.zest;
+package org.zaproxy.zap.extension.scripts.diagnostics;
 
+import java.util.List;
 import java.util.Optional;
 
-public interface ZestScriptDiagnosticSource {
+/** Engine-provided diagnostics from a completed script run. */
+public interface ScriptDiagnosticSource {
 
     /**
      * {@code context}: full diagnostic text; {@code detailMessage}: single-line summary; unknown
      * indices are {@code -1}.
      */
-    record ZestScriptRunDiagnostic(
+    record RunFailureDiagnostic(
             String context,
             String detailMessage,
             int chainScriptOrder,
@@ -35,5 +37,17 @@ public interface ZestScriptDiagnosticSource {
             String elementType,
             String screenshotBase64) {}
 
-    Optional<ZestScriptRunDiagnostic> getLastRunDiagnostic();
+    /** One stdout line from a completed run, attributed by the engine runner. */
+    record RunOutput(
+            String scriptName,
+            int sourceStatementIndex,
+            int ordinal,
+            String elementType,
+            String message) {}
+
+    Optional<RunFailureDiagnostic> getLastRunFailure();
+
+    List<RunOutput> getRunOutputs();
+
+    void clearRunDiagnostics();
 }
