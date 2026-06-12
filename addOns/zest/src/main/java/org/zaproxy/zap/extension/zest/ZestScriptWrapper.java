@@ -20,6 +20,7 @@
 package org.zaproxy.zap.extension.zest;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javax.script.ScriptException;
@@ -58,6 +59,9 @@ public class ZestScriptWrapper extends ScriptWrapper implements ScriptDiagnostic
 
     /** Last run failure diagnostics; cleared at run start and not copied by {@link #clone()}. */
     private RunFailureDiagnostic lastRunFailure;
+
+    private final List<RunOutput> runOutputs = new ArrayList<>();
+    private int runOutputOrdinal;
 
     public ZestScriptWrapper(ScriptWrapper script) {
         this.original = script;
@@ -288,11 +292,24 @@ public class ZestScriptWrapper extends ScriptWrapper implements ScriptDiagnostic
 
     @Override
     public List<RunOutput> getRunOutputs() {
-        return List.of();
+        return List.copyOf(runOutputs);
     }
 
     @Override
     public void clearRunDiagnostics() {
         lastRunFailure = null;
+        runOutputs.clear();
+        runOutputOrdinal = 0;
+    }
+
+    void appendRunOutput(
+            String scriptName, int sourceStatementIndex, String elementType, String message) {
+        runOutputs.add(
+                new RunOutput(
+                        scriptName,
+                        sourceStatementIndex,
+                        runOutputOrdinal++,
+                        elementType == null ? "" : elementType,
+                        message));
     }
 }
