@@ -33,16 +33,18 @@ public final class ScriptRunReportQuery {
 
     private static final Logger LOGGER = LogManager.getLogger(ScriptRunReportQuery.class);
 
+    public record Options(boolean includeScreenshots, boolean includeScriptOutput) {}
+
     private ScriptRunReportQuery() {}
 
-    public static List<ScriptRunReportData.Run> loadRunsForReport(boolean includeScreenshots) {
+    public static List<ScriptRunReportData.Run> loadRunsForReport(Options options) {
         PersistenceManagerFactory pmf = TableJdo.getPmf();
         if (pmf == null) {
             return List.of();
         }
         PersistenceManager pm = pmf.getPersistenceManager();
         try {
-            return queryRuns(pm, includeScreenshots);
+            return queryRuns(pm, options);
         } catch (Exception e) {
             LOGGER.warn("Failed to load script runs for report.", e);
             return List.of();
@@ -51,48 +53,102 @@ public final class ScriptRunReportQuery {
         }
     }
 
+    /** Applies report section options to already-materialized runs (e.g. report unit tests). */
+    public static List<ScriptRunReportData.Run> filterRunsForReport(
+            List<ScriptRunReportData.Run> runs, Options options) {
+        return runs.stream()
+                .map(run -> materializeRunFromReportData(run, options))
+                .filter(ScriptRunReportQuery::hasReportableContent)
+                .toList();
+    }
+
     @SuppressWarnings("try")
-    private static List<ScriptRunReportData.Run> queryRuns(
-            PersistenceManager pm, boolean includeScreenshots) throws Exception {
+    private static List<ScriptRunReportData.Run> queryRuns(PersistenceManager pm, Options options)
+            throws Exception {
         try (Query<ScriptsRun> runQuery = pm.newQuery(ScriptsRun.class)) {
             runQuery.setOrdering("id ascending");
             return runQuery.executeList().stream()
-                    .map(run -> materializeRun(run, includeScreenshots))
+                    .map(run -> materializeRun(run, options))
+                    .filter(ScriptRunReportQuery::hasReportableContent)
                     .toList();
         }
     }
 
-    private static ScriptRunReportData.Run materializeRun(
-            ScriptsRun run, boolean includeScreenshots) {
+    private static ScriptRunReportData.Run materializeRun(ScriptsRun run, Options options) {
         List<ScriptRunReportData.Script> scripts = new ArrayList<>();
         for (ScriptsRunScript sr : run.getScripts()) {
-            scripts.add(materializeScript(sr, includeScreenshots));
+            scripts.add(materializeScript(sr, options));
         }
         return new ScriptRunReportData.Run(
                 run.getCreateTimestamp().toString(), run.getOutcome(), run.getSummary(), scripts);
     }
 
+    private static ScriptRunReportData.Run materializeRunFromReportData(
+            ScriptRunReportData.Run run, Options options) {
+        return new ScriptRunReportData.Run(
+                run.created(),
+                run.outcome(),
+                run.summary(),
+                run.scripts().stream()
+                        .map(script -> materializeScriptFromReportData(script, options))
+                        .toList());
+    }
+
     private static ScriptRunReportData.Script materializeScript(
-            ScriptsRunScript sr, boolean includeScreenshots) {
+            ScriptsRunScript sr, Options options) {
         List<ScriptRunReportData.Step> reportSteps =
                 sr.getSteps().stream()
-                        .map(step -> materializeStep(step, includeScreenshots))
+                        .map(step -> materializeStep(step, options))
+                        .filter(step -> !step.outputs().isEmpty() || step.screenshot() != null)
                         .toList();
         return new ScriptRunReportData.Script(
                 sr.getOrdinal() + 1, sr.getScriptName(), sr.getScriptType(), reportSteps);
     }
 
-    private static ScriptRunReportData.Step materializeStep(
-            ScriptsRunStep st, boolean includeScreenshots) {
-        List<ScriptRunReportData.Output> reportOuts =
-                st.getOutputs().stream()
-                        .map(o -> new ScriptRunReportData.Output(o.getKind(), o.getMessage()))
+    private static ScriptRunReportData.Script materializeScriptFromReportData(
+            ScriptRunReportData.Script script, Options options) {
+        List<ScriptRunReportData.Step> reportSteps =
+                script.steps().stream()
+                        .map(step -> materializeStepFromReportData(step, options))
+                        .filter(step -> !step.outputs().isEmpty() || step.screenshot() != null)
                         .toList();
+        return new ScriptRunReportData.Script(
+                script.order(), script.scriptName(), script.scriptType(), reportSteps);
+    }
+
+    private static ScriptRunReportData.Step materializeStep(ScriptsRunStep st, Options options) {
+        List<ScriptRunReportData.Output> reportOuts =
+                filterOutputsForReport(
+                        st.getOutputs().stream()
+                                .map(
+                                        o ->
+                                                new ScriptRunReportData.Output(
+                                                        o.getKind(), o.getMessage()))
+                                .toList(),
+                        options);
         return new ScriptRunReportData.Step(
                 st.getSourceStepIndex(),
                 st.getLine(),
                 reportOuts,
-                screenshotData(st, includeScreenshots));
+                screenshotData(st, options.includeScreenshots()));
+    }
+
+    private static ScriptRunReportData.Step materializeStepFromReportData(
+            ScriptRunReportData.Step step, Options options) {
+        return new ScriptRunReportData.Step(
+                step.sourceStepIndex(),
+                step.line(),
+                filterOutputsForReport(step.outputs(), options),
+                screenshotData(step.screenshot(), options.includeScreenshots()));
+    }
+
+    private static List<ScriptRunReportData.Output> filterOutputsForReport(
+            List<ScriptRunReportData.Output> outputs, Options options) {
+        return outputs.stream().filter(output -> includeOutput(output.kind(), options)).toList();
+    }
+
+    private static boolean includeOutput(String kind, Options options) {
+        return options.includeScriptOutput() || ScriptRunRecorder.OUTPUT_KIND_ERROR.equals(kind);
     }
 
     private static String screenshotData(ScriptsRunStep st, boolean includeScreenshots) {
@@ -101,5 +157,19 @@ public final class ScriptRunReportQuery {
         }
         ScriptsRunStepScreenshot screenshot = st.getScreenshot();
         return screenshot != null ? screenshot.getData() : null;
+    }
+
+    private static String screenshotData(String screenshotBase64, boolean includeScreenshots) {
+        if (!includeScreenshots) {
+            return null;
+        }
+        return screenshotBase64;
+    }
+
+    private static boolean hasReportableContent(ScriptRunReportData.Run run) {
+        if (!ScriptRunRecorder.OUTCOME_SUCCESS.equals(run.outcome())) {
+            return true;
+        }
+        return run.scripts().stream().anyMatch(script -> !script.steps().isEmpty());
     }
 }
