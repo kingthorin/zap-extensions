@@ -21,6 +21,7 @@ package org.zaproxy.zap.extension.zest;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
@@ -105,8 +106,7 @@ class ZestScriptWrapperUnitTest {
         assertThat(clone.getUser(), is(nullValue()));
     }
 
-    @Test
-    void shouldNotCopyLastRunDiagnosticOntoClone() {
+    void shouldNotCopyLastRunFailureOntoClone() {
         ZestScriptWrapper wrapper = new ZestScriptWrapper(createMockScriptWrapper());
         wrapper.setLastRunFailure(
                 new RunFailureDiagnostic(
@@ -118,14 +118,14 @@ class ZestScriptWrapperUnitTest {
     }
 
     @Test
-    void shouldReturnEmptyLastRunDiagnosticWhenNoFailureRecorded() {
+    void shouldReturnEmptyLastRunFailureWhenNoFailureRecorded() {
         ZestScriptWrapper wrapper = new ZestScriptWrapper(createMockScriptWrapper());
 
         assertThat(wrapper.getLastRunFailure().isPresent(), is(false));
     }
 
     @Test
-    void shouldReturnLastRunDiagnosticSnapshot() {
+    void shouldReturnLastRunFailureSnapshot() {
         ZestScriptWrapper wrapper = new ZestScriptWrapper(createMockScriptWrapper());
         wrapper.setLastRunFailure(
                 new RunFailureDiagnostic(
@@ -143,13 +143,26 @@ class ZestScriptWrapperUnitTest {
     }
 
     @Test
-    void shouldClearLastRunDiagnostic() {
+    void shouldClearLastRunFailureAndRunOutputs() {
         ZestScriptWrapper wrapper = new ZestScriptWrapper(createMockScriptWrapper());
-        wrapper.setLastRunFailure(
-                new RunFailureDiagnostic("ctx", "detail", 1, 0, "ZestFoo", null));
+        wrapper.setLastRunFailure(new RunFailureDiagnostic("ctx", "detail", 1, 0, "ZestFoo", null));
+        wrapper.appendRunOutput("script", 0, "ZestFoo", "line one");
 
         wrapper.clearRunDiagnostics();
 
         assertThat(wrapper.getLastRunFailure().isPresent(), is(false));
+        assertThat(wrapper.getRunOutputs(), hasSize(0));
+    }
+
+    @Test
+    void shouldAppendRunOutputsWithOrdinal() {
+        ZestScriptWrapper wrapper = new ZestScriptWrapper(createMockScriptWrapper());
+        wrapper.appendRunOutput("script-a", 1, "ZestActionPrint", "first");
+        wrapper.appendRunOutput("script-a", 2, "ZestActionPrint", "second");
+
+        assertThat(wrapper.getRunOutputs(), hasSize(2));
+        assertThat(wrapper.getRunOutputs().get(0).ordinal(), is(equalTo(0)));
+        assertThat(wrapper.getRunOutputs().get(0).message(), is(equalTo("first")));
+        assertThat(wrapper.getRunOutputs().get(1).ordinal(), is(equalTo(1)));
     }
 }
