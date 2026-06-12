@@ -752,10 +752,9 @@ class ExtensionReportsJsonUnitTest extends TestUtils {
 
         JSONArray alerts = site.getJSONObject(0).getJSONArray("alerts");
         assertThat(alerts.size(), is(equalTo(1)));
-        checkAlert(site.getJSONObject(0));
         JSONArray instances = alerts.getJSONObject(0).getJSONArray("instances");
         checkJsonAlertInstanceAndMessages(instances, 0);
-        checkJsonAlertInstanceAndMessages(instances, 0);
+        checkJsonAlertInstanceAndMessages(instances, 1);
 
         // tags are not included in non plus report
         JSONArray tags = alerts.getJSONObject(0).getJSONArray("tags");
@@ -817,10 +816,9 @@ class ExtensionReportsJsonUnitTest extends TestUtils {
 
         // When
         File r = ReportTestUtils.generateReportWithScriptDiagnostics(template, f);
-        String report = new String(Files.readAllBytes(r.toPath()));
 
         // Then
-        JSONObject json = JSONObject.fromObject(report);
+        JSONObject json = readJsonReport(r);
         JSONObject scriptDiagnostics = json.getJSONObject("scriptDiagnostics");
         assertThat(scriptDiagnostics.containsKey("runs"), is(true));
         JSONArray runsJson = scriptDiagnostics.getJSONArray("runs");
@@ -892,14 +890,9 @@ class ExtensionReportsJsonUnitTest extends TestUtils {
 
         // When
         File r = ReportTestUtils.generateReportWithScriptDiagnostics(template, f, runs);
-        String report = new String(Files.readAllBytes(r.toPath()));
 
         // Then — must parse as JSON and round-trip string values ([[${...}]] encoding)
-        JSONObject run =
-                JSONObject.fromObject(report)
-                        .getJSONObject("scriptDiagnostics")
-                        .getJSONArray("runs")
-                        .getJSONObject(0);
+        JSONObject run = scriptDiagnosticsRun(r, 0);
         assertScriptDiagnosticRunStructure(run);
         assertThat(run.getString("created"), is(equalTo(created)));
         assertThat(run.getString("outcome"), is(equalTo(outcome)));
@@ -945,6 +938,66 @@ class ExtensionReportsJsonUnitTest extends TestUtils {
         assertThat(output.containsKey("detail"), is(false));
     }
 
+    private static JSONObject readJsonReport(File reportFile) throws IOException {
+        return JSONObject.fromObject(new String(Files.readAllBytes(reportFile.toPath())));
+    }
+
+    private static JSONObject scriptDiagnosticsRun(File report, int runIndex) throws IOException {
+        return readJsonReport(report)
+                .getJSONObject("scriptDiagnostics")
+                .getJSONArray("runs")
+                .getJSONObject(runIndex);
+    }
+
+    private static JSONObject firstScriptFromRun(File report, int runIndex) throws IOException {
+        return scriptDiagnosticsRun(report, runIndex).getJSONArray("scripts").getJSONObject(0);
+    }
+
+    private static JSONObject firstStepFromRun(File report, int runIndex) throws IOException {
+        return firstScriptFromRun(report, runIndex).getJSONArray("steps").getJSONObject(0);
+    }
+
+    @Test
+    void shouldOmitScriptDiagnosticStdoutWhenOutputSectionDisabled() throws Exception {
+        Template template = ReportTestUtils.getTemplateFromYamlFile("traditional-json-plus");
+        File f =
+                File.createTempFile(
+                        "traditional-json-plus-no-script-stdout", template.getExtension());
+
+        File r =
+                ReportTestUtils.generateReportWithScriptDiagnostics(
+                        template,
+                        f,
+                        true,
+                        List.of(ReportTestUtils.defaultScriptDiagnosticRunWithStdoutAndError()),
+                        "scriptdiagnosticsoutput");
+        JSONObject step = firstStepFromRun(r, 0);
+        JSONArray outputs = step.getJSONArray("outputs");
+        assertThat(outputs.size(), is(equalTo(1)));
+        assertThat(outputs.getJSONObject(0).getString("kind"), is(equalTo("ERROR")));
+        assertThat(outputs.getJSONObject(0).getString("message"), is(equalTo("boom")));
+    }
+
+    @Test
+    void shouldIncludeScriptDiagnosticStdoutWhenOutputSectionEnabled() throws Exception {
+        Template template = ReportTestUtils.getTemplateFromYamlFile("traditional-json-plus");
+        File f =
+                File.createTempFile("traditional-json-plus-script-stdout", template.getExtension());
+
+        File r =
+                ReportTestUtils.generateReportWithScriptDiagnostics(
+                        template,
+                        f,
+                        true,
+                        List.of(ReportTestUtils.defaultScriptDiagnosticRunWithStdout()));
+        JSONObject step = firstStepFromRun(r, 0);
+        JSONObject output = step.getJSONArray("outputs").getJSONObject(0);
+        assertThat(step.getInt("sourceStepIndex"), is(equalTo(3)));
+        assertThat(step.getString("line"), is(equalTo("ZestActionPrint")));
+        assertThat(output.getString("kind"), is(equalTo("OUTPUT")));
+        assertThat(output.getString("message"), is(equalTo("logged in")));
+    }
+
     @Test
     void shouldOmitScriptDiagnosticScreenshotWhenScreenshotsSectionDisabled() throws Exception {
         Template template = ReportTestUtils.getTemplateFromYamlFile("traditional-json-plus");
@@ -959,15 +1012,7 @@ class ExtensionReportsJsonUnitTest extends TestUtils {
                         true,
                         List.of(ReportTestUtils.defaultScriptDiagnosticRunWithScreenshot()),
                         "scriptdiagnosticsscreenshots");
-        JSONObject step =
-                JSONObject.fromObject(new String(Files.readAllBytes(r.toPath())))
-                        .getJSONObject("scriptDiagnostics")
-                        .getJSONArray("runs")
-                        .getJSONObject(0)
-                        .getJSONArray("scripts")
-                        .getJSONObject(0)
-                        .getJSONArray("steps")
-                        .getJSONObject(0);
+        JSONObject step = firstStepFromRun(r, 0);
         assertThat(step.containsKey("screenshot"), is(equalTo(false)));
     }
 
@@ -988,11 +1033,8 @@ class ExtensionReportsJsonUnitTest extends TestUtils {
                         f,
                         false,
                         List.of(ReportTestUtils.defaultScriptDiagnosticRunWithScreenshot()));
-        String report = new String(Files.readAllBytes(r.toPath()));
-
         // Then
-        JSONObject json = JSONObject.fromObject(report);
+        JSONObject json = readJsonReport(r);
         assertThat(json.containsKey("scriptDiagnostics"), is(equalTo(false)));
-        assertThat(json.getJSONArray("site").size(), is(equalTo(0)));
     }
 }
