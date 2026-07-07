@@ -26,6 +26,19 @@ import org.apache.commons.lang3.StringUtils;
 /** Engine-provided diagnostics from a completed script run. */
 public interface ScriptDiagnosticSource {
 
+    record WebElement(
+            Integer formIndex,
+            String tagName,
+            String attributeType,
+            String attributeId,
+            String attributeName,
+            String attributeValue,
+            String text,
+            boolean displayed,
+            boolean enabled,
+            String selectorType,
+            String selectorValue) {}
+
     /**
      * {@code context}: full diagnostic text; {@code detailMessage}: single-line summary; unknown
      * indices are {@code -1}.
@@ -36,12 +49,14 @@ public interface ScriptDiagnosticSource {
             int chainScriptOrder,
             int sourceStatementIndex,
             String elementType,
-            String screenshotBase64) {
+            String screenshotBase64,
+            List<WebElement> webElements) {
 
         public RunFailureDiagnostic {
             context = StringUtils.defaultString(context);
             detailMessage = StringUtils.defaultString(detailMessage);
             elementType = StringUtils.defaultString(elementType);
+            webElements = webElements != null ? List.copyOf(webElements) : List.of();
         }
     }
 

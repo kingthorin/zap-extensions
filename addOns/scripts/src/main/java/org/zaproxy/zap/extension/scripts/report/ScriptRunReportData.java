@@ -31,12 +31,30 @@ public final class ScriptRunReportData {
 
     public record Script(int order, String scriptName, String scriptType, List<Step> steps) {}
 
-    public record Step(int sourceStepIndex, String line, List<Output> outputs, String screenshot) {
+    public record Step(
+            int sourceStepIndex,
+            String line,
+            List<Output> outputs,
+            String screenshot,
+            List<WebElement> webElements) {
 
         public Step(int sourceStepIndex, String line, List<Output> outputs) {
-            this(sourceStepIndex, line, outputs, null);
+            this(sourceStepIndex, line, outputs, null, List.of());
         }
     }
 
     public record Output(String kind, String message) {}
+
+    public record WebElement(
+            Integer formIndex,
+            String tagName,
+            String attributeType,
+            String attributeId,
+            String attributeName,
+            String attributeValue,
+            String text,
+            boolean displayed,
+            boolean enabled,
+            String selectorType,
+            String selectorValue) {}
 }

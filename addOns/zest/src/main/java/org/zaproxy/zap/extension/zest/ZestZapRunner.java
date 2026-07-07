@@ -55,6 +55,7 @@ import org.zaproxy.zap.extension.ruleconfig.RuleConfigParam;
 import org.zaproxy.zap.extension.script.ExtensionScript;
 import org.zaproxy.zap.extension.script.ScriptUI;
 import org.zaproxy.zap.extension.script.ScriptVars;
+import org.zaproxy.zap.extension.scripts.diagnostics.ScriptDiagnosticSource;
 import org.zaproxy.zap.extension.scripts.diagnostics.ScriptDiagnosticSource.RunFailureDiagnostic;
 import org.zaproxy.zap.extension.selenium.Browser;
 import org.zaproxy.zap.extension.selenium.ClientAuthenticator;
@@ -554,12 +555,14 @@ public class ZestZapRunner extends ZestBasicRunner implements ScannerListener {
         }
         String diagnostics = formatStatementDiagnostics(stmt);
         String detail = formatStatementFailureDetail(t);
+        FailureCapture capture = captureClientFailureData(stmt);
         wrapper.setLastRunFailure(
                 buildFailureDiagnostic(
                         stmt,
                         diagnostics + " - " + detail,
                         stmt.getElementType() + " - " + detail,
-                        captureClientFailureScreenshot(stmt)));
+                        capture.screenshotBase64(),
+                        capture.webElements()));
     }
 
     /**
@@ -601,28 +604,42 @@ public class ZestZapRunner extends ZestBasicRunner implements ScannerListener {
      */
     private void recordClientLaunchFailureContext(ZestClientLaunch clientLaunch, String headline) {
         String diagnostics = formatStatementDiagnostics(clientLaunch);
+        FailureCapture capture = captureClientFailureData(clientLaunch);
         wrapper.setLastRunFailure(
                 buildFailureDiagnostic(
                         clientLaunch,
                         diagnostics + " - " + headline,
                         headline,
-                        captureClientFailureScreenshot(clientLaunch)));
+                        capture.screenshotBase64(),
+                        capture.webElements()));
     }
 
-    private String captureClientFailureScreenshot(ZestStatement stmt) {
+    private record FailureCapture(
+            String screenshotBase64, List<ScriptDiagnosticSource.WebElement> webElements) {}
+
+    private FailureCapture captureClientFailureData(ZestStatement stmt) {
         if (!(stmt instanceof ZestClientElement element)) {
-            return null;
+            return new FailureCapture(null, List.of());
         }
         String handle = element.getWindowHandle();
         if (StringUtils.isBlank(handle)) {
-            return null;
+            return new FailureCapture(null, List.of());
         }
         WebDriver wd = getWebDriver(handle);
-        return wd != null ? ZestFailureScreenshotCapture.captureBase64(wd) : null;
+        if (wd == null) {
+            return new FailureCapture(null, List.of());
+        }
+        return new FailureCapture(
+                ZestFailureScreenshotCapture.captureBase64(wd),
+                ZestFailureInteractableCapture.captureInteractables(wd));
     }
 
     private RunFailureDiagnostic buildFailureDiagnostic(
-            ZestStatement stmt, String context, String detailMessage, String screenshotBase64) {
+            ZestStatement stmt,
+            String context,
+            String detailMessage,
+            String screenshotBase64,
+            List<ScriptDiagnosticSource.WebElement> webElements) {
         var chainProvOpt = wrapper.getChainProvenance();
         if (chainProvOpt.isEmpty()) {
             return new RunFailureDiagnostic(
@@ -631,7 +648,8 @@ public class ZestZapRunner extends ZestBasicRunner implements ScannerListener {
                     1,
                     stmt.getIndex(),
                     StringUtils.defaultString(stmt.getElementType()),
-                    screenshotBase64);
+                    screenshotBase64,
+                    webElements);
         }
         return chainProvOpt
                 .get()
@@ -644,7 +662,8 @@ public class ZestZapRunner extends ZestBasicRunner implements ScannerListener {
                                         origin.segmentIndex() + 1,
                                         origin.originalStatementIndex(),
                                         StringUtils.defaultString(origin.elementType()),
-                                        screenshotBase64))
+                                        screenshotBase64,
+                                        webElements))
                 .orElseGet(
                         () ->
                                 new RunFailureDiagnostic(
@@ -653,7 +672,8 @@ public class ZestZapRunner extends ZestBasicRunner implements ScannerListener {
                                         -1,
                                         -1,
                                         StringUtils.defaultString(stmt.getElementType()),
-                                        screenshotBase64));
+                                        screenshotBase64,
+                                        webElements));
     }
 
     private String formatStatementDiagnostics(ZestStatement stmt) {

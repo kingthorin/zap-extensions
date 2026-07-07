@@ -10,6 +10,7 @@
         <class>org.zaproxy.zap.extension.scripts.internal.db.ScriptsRunStep</class>
         <class>org.zaproxy.zap.extension.scripts.internal.db.ScriptsRunOutput</class>
         <class>org.zaproxy.zap.extension.scripts.internal.db.ScriptsRunStepScreenshot</class>
+        <class>org.zaproxy.zap.extension.scripts.internal.db.ScriptsRunStepWebElement</class>
 
         <exclude-unlisted-classes/>
     </persistence-unit>

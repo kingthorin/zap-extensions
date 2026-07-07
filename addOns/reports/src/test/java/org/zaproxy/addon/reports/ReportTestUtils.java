@@ -445,7 +445,8 @@ public class ReportTestUtils {
                                                         new ScriptRunReportData.Output(
                                                                 ScriptRunRecorder.OUTPUT_KIND_ERROR,
                                                                 "boom")),
-                                                null)))));
+                                                null,
+                                                List.of())))));
     }
 
     static ScriptRunReportData.Run scriptRunReport(
@@ -499,7 +500,8 @@ public class ReportTestUtils {
                                                 List.of(
                                                         new ScriptRunReportData.Output(
                                                                 outputKind, outputDetailMessage)),
-                                                screenshot)))));
+                                                screenshot,
+                                                List.of())))));
     }
 
     static Template getTemplateFromYamlFile(String templateName) throws Exception {
@@ -550,9 +552,8 @@ public class ReportTestUtils {
                                                             7,
                                                             LINE,
                                                             stepOutputs,
-                                                            includeScreenshot
-                                                                    ? SCREENSHOT
-                                                                    : null))))));
+                                                            includeScreenshot ? SCREENSHOT : null,
+                                                            List.of()))))));
         }
     }
 

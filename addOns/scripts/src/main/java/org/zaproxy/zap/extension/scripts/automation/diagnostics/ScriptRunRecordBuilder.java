@@ -158,7 +158,10 @@ public final class ScriptRunRecordBuilder {
                         outputDetail,
                         d.chainScriptOrder(),
                         new ScriptRunRecorder.FailureStep(
-                                d.sourceStatementIndex(), d.elementType(), d.screenshotBase64()));
+                                d.sourceStatementIndex(),
+                                d.elementType(),
+                                d.screenshotBase64(),
+                                d.webElements()));
             }
         }
         String summary = exceptionSummary(e);
@@ -166,7 +169,7 @@ public final class ScriptRunRecordBuilder {
                 summary,
                 ScriptRunFailureDetail.compactExceptionDetailForPersistence(e),
                 -1,
-                new ScriptRunRecorder.FailureStep(-1, ""));
+                new ScriptRunRecorder.FailureStep(-1, "", null, List.of()));
     }
 
     private static String exceptionSummary(Exception e) {
@@ -179,6 +182,7 @@ public final class ScriptRunRecordBuilder {
         private int minOrdinal = Integer.MAX_VALUE;
         private String line = "";
         private String screenshotBase64;
+        private List<ScriptDiagnosticSource.WebElement> webElements = List.of();
         private String errorMessage;
         private final List<ScriptRunRecorder.StepOutput> stdoutOutputs = new ArrayList<>();
 
@@ -204,6 +208,7 @@ public final class ScriptRunRecordBuilder {
                 line = failure.line();
             }
             screenshotBase64 = failure.screenshotBase64();
+            webElements = failure.webElements();
             errorMessage = failureOutputDetail;
         }
 
@@ -224,7 +229,8 @@ public final class ScriptRunRecordBuilder {
                         new ScriptRunRecorder.StepOutput(
                                 errorOrdinal, ScriptRunRecorder.OUTPUT_KIND_ERROR, errorMessage));
             }
-            return new ScriptRunRecorder.RunStep(sourceStepIndex, line, outputs, screenshotBase64);
+            return new ScriptRunRecorder.RunStep(
+                    sourceStepIndex, line, outputs, screenshotBase64, webElements);
         }
     }
 }

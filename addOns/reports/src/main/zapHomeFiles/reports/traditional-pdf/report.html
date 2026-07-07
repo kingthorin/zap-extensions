@@ -246,6 +246,27 @@ td {
 								th:src="|data:image/png;base64,${st.screenshot}|" alt="" src="" />
 							</td>
 						</tr>
+						<tr
+							th:if="${reportData.isIncludeSection('scriptdiagnosticsinteractables') &amp;&amp; !st.webElements.isEmpty()}">
+							<td colspan="4">
+								<table class="results">
+									<tr>
+										<th>Tag</th>
+										<th>Type</th>
+										<th>Name</th>
+										<th>Value</th>
+										<th>Selector</th>
+									</tr>
+									<tr th:each="we: ${st.webElements}">
+										<td th:text="${we.tagName}"></td>
+										<td th:text="${we.attributeType}"></td>
+										<td th:text="${we.attributeName}"></td>
+										<td th:text="${we.attributeValue}"></td>
+										<td th:text="${we.selectorValue}"></td>
+									</tr>
+								</table>
+							</td>
+						</tr>
 					</th:block>
 				</table>
 			</th:block>

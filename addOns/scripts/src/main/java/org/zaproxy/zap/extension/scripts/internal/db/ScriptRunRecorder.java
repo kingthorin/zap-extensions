@@ -27,6 +27,7 @@ import javax.jdo.Transaction;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.zaproxy.zap.extension.scripts.diagnostics.ScriptDiagnosticSource;
 
 /** Persists script runs; persistence errors are logged and not rethrown. */
 public final class ScriptRunRecorder {
@@ -47,10 +48,14 @@ public final class ScriptRunRecorder {
     }
 
     public record RunStep(
-            int sourceStepIndex, String line, List<StepOutput> outputs, String screenshotBase64) {
+            int sourceStepIndex,
+            String line,
+            List<StepOutput> outputs,
+            String screenshotBase64,
+            List<ScriptDiagnosticSource.WebElement> webElements) {
 
         public RunStep(int sourceStepIndex, String line, List<StepOutput> outputs) {
-            this(sourceStepIndex, line, outputs, null);
+            this(sourceStepIndex, line, outputs, null, List.of());
         }
     }
 
@@ -60,10 +65,14 @@ public final class ScriptRunRecorder {
      * {@code sourceStepIndex}: statement index in the failing script, or {@code -1}. {@code line}:
      * failing element type name.
      */
-    public record FailureStep(int sourceStepIndex, String line, String screenshotBase64) {
+    public record FailureStep(
+            int sourceStepIndex,
+            String line,
+            String screenshotBase64,
+            List<ScriptDiagnosticSource.WebElement> webElements) {
 
         public FailureStep(int sourceStepIndex, String line) {
-            this(sourceStepIndex, line, null);
+            this(sourceStepIndex, line, null, List.of());
         }
     }
 
@@ -122,6 +131,7 @@ public final class ScriptRunRecorder {
                         }
 
                         attachScreenshot(st, step.screenshotBase64());
+                        attachWebElements(st, step.webElements());
                     }
                 }
 
@@ -144,7 +154,8 @@ public final class ScriptRunRecorder {
             String scriptType,
             String summaryMessage,
             String outputDetailMessage,
-            String screenshotBase64) {
+            String screenshotBase64,
+            List<ScriptDiagnosticSource.WebElement> webElements) {
         recordFailedRun(
                 summaryMessage,
                 List.of(
@@ -160,7 +171,8 @@ public final class ScriptRunRecorder {
                                                                 0,
                                                                 OUTPUT_KIND_ERROR,
                                                                 outputDetailMessage)),
-                                                screenshotBase64)))));
+                                                screenshotBase64,
+                                                webElements)))));
     }
 
     private static void attachScreenshot(ScriptsRunStep step, String screenshotBase64) {
@@ -172,5 +184,32 @@ public final class ScriptRunRecorder {
         screenshot.setCreateTimestamp(Instant.now());
         screenshot.setData(screenshotBase64);
         step.setScreenshot(screenshot);
+    }
+
+    private static void attachWebElements(
+            ScriptsRunStep step, List<ScriptDiagnosticSource.WebElement> webElements) {
+        if (webElements == null || webElements.isEmpty()) {
+            return;
+        }
+        Instant now = Instant.now();
+        int ordinal = 0;
+        for (ScriptDiagnosticSource.WebElement we : webElements) {
+            ScriptsRunStepWebElement entity = new ScriptsRunStepWebElement();
+            entity.setRunStep(step);
+            entity.setCreateTimestamp(now);
+            entity.setOrdinal(ordinal++);
+            entity.setFormIndex(we.formIndex());
+            entity.setTagName(we.tagName());
+            entity.setAttributeType(we.attributeType());
+            entity.setAttributeId(we.attributeId());
+            entity.setAttributeName(we.attributeName());
+            entity.setAttributeValue(we.attributeValue());
+            entity.setText(we.text());
+            entity.setDisplayed(we.displayed());
+            entity.setEnabled(we.enabled());
+            entity.setSelectorType(we.selectorType());
+            entity.setSelectorValue(we.selectorValue());
+            step.getWebElements().add(entity);
+        }
     }
 }

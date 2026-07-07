@@ -54,7 +54,7 @@ class ScriptRunRecorderUnitTest {
             given(tx.isActive()).willReturn(false);
 
             ScriptRunRecorder.recordSingleScriptFailure(
-                    "my-script", "standalone", "script blew up", "raw error", null);
+                    "my-script", "standalone", "script blew up", "raw error", null, List.of());
 
             @SuppressWarnings("rawtypes")
             ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
@@ -217,7 +217,8 @@ class ScriptRunRecorderUnitTest {
                                                                     ScriptRunRecorder
                                                                             .OUTPUT_KIND_ERROR,
                                                                     "detail")),
-                                                    "base64png"))),
+                                                    "base64png",
+                                                    List.of()))),
                             new ScriptRunRecorder.RunScript(
                                     "other-script",
                                     "standalone",
@@ -231,7 +232,8 @@ class ScriptRunRecorderUnitTest {
                                                                     ScriptRunRecorder
                                                                             .OUTPUT_KIND_ERROR,
                                                                     "detail")),
-                                                    "")))));
+                                                    "",
+                                                    List.of())))));
 
             @SuppressWarnings("rawtypes")
             ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);

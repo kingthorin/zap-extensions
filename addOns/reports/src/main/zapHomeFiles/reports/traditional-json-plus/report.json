@@ -43,6 +43,22 @@
 								}[/th:block]
 							][#th:block th:if="${reportData.isIncludeSection('scriptdiagnosticsscreenshots') && st.screenshot != null}"]
 							,"screenshot": [[${st.screenshot}]]
+							[/th:block][#th:block th:if="${reportData.isIncludeSection('scriptdiagnosticsinteractables') && !st.webElements.isEmpty()}"]
+							,"webElements": [[#th:block th:each="we, weState: ${st.webElements}"][#th:block th:if="${! weState.first}"],[/th:block]
+								{
+									"formIndex": [[${we.formIndex}]],
+									"tagName": [[${we.tagName}]],
+									"attributeType": [[${we.attributeType}]],
+									"attributeId": [[${we.attributeId}]],
+									"attributeName": [[${we.attributeName}]],
+									"attributeValue": [[${we.attributeValue}]],
+									"text": [[${we.text}]],
+									"displayed": [[${we.displayed}]],
+									"enabled": [[${we.enabled}]],
+									"selectorType": [[${we.selectorType}]],
+									"selectorValue": [[${we.selectorValue}]]
+								}[/th:block]
+							]
 							[/th:block]
 						}[/th:block]
 					]

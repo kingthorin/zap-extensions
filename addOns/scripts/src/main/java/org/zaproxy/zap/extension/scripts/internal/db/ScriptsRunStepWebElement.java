@@ -19,13 +19,10 @@
  */
 package org.zaproxy.zap.extension.scripts.internal.db;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.time.Instant;
 import javax.jdo.annotations.Cacheable;
 import javax.jdo.annotations.Column;
-import javax.jdo.annotations.Element;
 import javax.jdo.annotations.IdGeneratorStrategy;
-import javax.jdo.annotations.Order;
 import javax.jdo.annotations.PersistenceCapable;
 import javax.jdo.annotations.Persistent;
 import javax.jdo.annotations.PrimaryKey;
@@ -35,34 +32,48 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @Cacheable("false")
-@PersistenceCapable(table = "SCRIPTS_RUN_STEP", detachable = "true")
-public class ScriptsRunStep {
+@PersistenceCapable(table = "SCRIPTS_RUN_STEP_WEB_ELEMENT", detachable = "true")
+public class ScriptsRunStepWebElement {
 
     @PrimaryKey
     @Persistent(valueStrategy = IdGeneratorStrategy.IDENTITY)
     private long id;
 
-    @Column(name = "RUNSCRIPTID", allowsNull = "false")
-    private ScriptsRunScript runScript;
+    @Column(name = "RUNSTEPID", allowsNull = "false")
+    private ScriptsRunStep runStep;
+
+    private Instant createTimestamp;
 
     @Column(name = "ORDINAL")
     private int ordinal;
 
-    private int sourceStepIndex;
+    private Integer formIndex;
 
-    @Column(name = "LINETEXT", length = 1024)
-    private String line;
+    @Column(length = 1024)
+    private String tagName;
 
-    @Order(column = "ORDINAL", mappedBy = "ordinal")
-    @Element(dependent = "true")
-    @Persistent(mappedBy = "runStep")
-    private List<ScriptsRunOutput> outputs = new ArrayList<>();
+    @Column(length = 1024)
+    private String attributeType;
 
-    @Persistent(mappedBy = "runStep", dependent = "true", defaultFetchGroup = "false")
-    private ScriptsRunStepScreenshot screenshot;
+    @Column(length = 1024)
+    private String attributeId;
 
-    @Order(column = "ORDINAL", mappedBy = "ordinal")
-    @Element(dependent = "true")
-    @Persistent(mappedBy = "runStep")
-    private List<ScriptsRunStepWebElement> webElements = new ArrayList<>();
+    @Column(length = 1024)
+    private String attributeName;
+
+    @Column(length = 1024)
+    private String attributeValue;
+
+    @Column(length = 4096)
+    private String text;
+
+    private boolean displayed;
+
+    private boolean enabled;
+
+    @Column(length = 32)
+    private String selectorType;
+
+    @Column(length = 4096)
+    private String selectorValue;
 }

@@ -183,7 +183,8 @@ class ScriptRunReportQueryUnitTest {
                                                                         ScriptRunRecorder
                                                                                 .OUTPUT_KIND_ERROR,
                                                                         "boom")),
-                                                        null)))));
+                                                        null,
+                                                        List.of())))));
 
         List<ScriptRunReportData.Run> filtered =
                 ScriptRunReportQuery.filterRunsForReport(List.of(run), new Options(false, false));

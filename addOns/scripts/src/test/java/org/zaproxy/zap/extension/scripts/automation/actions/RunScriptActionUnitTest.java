@@ -654,7 +654,8 @@ class RunScriptActionUnitTest extends TestUtils {
                                 2,
                                 13,
                                 "ZestClientClick",
-                                "shot"));
+                                "shot",
+                                List.of()));
         RunFailure failure =
                 RunScriptAction.resolveRunFailure(script, new RuntimeException("ignored"));
 
@@ -696,7 +697,8 @@ class RunScriptActionUnitTest extends TestUtils {
     void shouldResolveFailureOutputDetailFromExceptionWhenZestDetailBlank() {
         ScriptWrapper script =
                 new ScriptWrapperWithZestDiagnostic(
-                        "fake-zest", new RunFailureDiagnostic("ctx", "  ", 1, 5, "Line", null));
+                        "fake-zest",
+                        new RunFailureDiagnostic("ctx", "  ", 1, 5, "Line", null, List.of()));
         Exception ex = new RuntimeException("persist me");
 
         RunFailure failure = RunScriptAction.resolveRunFailure(script, ex);
@@ -856,7 +858,9 @@ class RunScriptActionUnitTest extends TestUtils {
         }
 
         ScriptWrapperWithZestDiagnostic(String name, String zestFailureContext) {
-            this(name, new RunFailureDiagnostic(zestFailureContext, "", -1, -1, "", null));
+            this(
+                    name,
+                    new RunFailureDiagnostic(zestFailureContext, "", -1, -1, "", null, List.of()));
         }
 
         @Override

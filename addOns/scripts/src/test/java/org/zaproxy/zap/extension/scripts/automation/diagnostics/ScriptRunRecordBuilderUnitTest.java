@@ -68,7 +68,7 @@ class ScriptRunRecordBuilderUnitTest {
                         "ctx",
                         "boom",
                         1,
-                        new ScriptRunRecorder.FailureStep(5, "ZestClientClick", "png"));
+                        new ScriptRunRecorder.FailureStep(5, "ZestClientClick", "png", List.of()));
 
         List<ScriptRunRecorder.RunScript> rows =
                 ScriptRunRecordBuilder.build(
@@ -94,7 +94,7 @@ class ScriptRunRecordBuilderUnitTest {
                         "ctx",
                         "boom",
                         -1,
-                        new ScriptRunRecorder.FailureStep(5, "ZestClientClick", null));
+                        new ScriptRunRecorder.FailureStep(5, "ZestClientClick", null, List.of()));
 
         List<ScriptRunRecorder.RunScript> rows =
                 ScriptRunRecordBuilder.build(

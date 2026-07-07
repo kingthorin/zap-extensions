@@ -131,7 +131,8 @@ public final class ScriptRunReportQuery {
                 st.getSourceStepIndex(),
                 st.getLine(),
                 reportOuts,
-                screenshotData(st, options.includeScreenshots()));
+                screenshotData(st, options.includeScreenshots()),
+                webElementsData(st.getWebElements()));
     }
 
     private static ScriptRunReportData.Step materializeStepFromReportData(
@@ -140,7 +141,8 @@ public final class ScriptRunReportQuery {
                 step.sourceStepIndex(),
                 step.line(),
                 filterOutputsForReport(step.outputs(), options),
-                screenshotData(step.screenshot(), options.includeScreenshots()));
+                screenshotData(step.screenshot(), options.includeScreenshots()),
+                step.webElements());
     }
 
     private static List<ScriptsRunOutput> loadOutputsForReport(
@@ -175,6 +177,26 @@ public final class ScriptRunReportQuery {
             return null;
         }
         return screenshotBase64;
+    }
+
+    private static List<ScriptRunReportData.WebElement> webElementsData(
+            List<ScriptsRunStepWebElement> dbElements) {
+        return dbElements.stream()
+                .map(
+                        e ->
+                                new ScriptRunReportData.WebElement(
+                                        e.getFormIndex(),
+                                        e.getTagName(),
+                                        e.getAttributeType(),
+                                        e.getAttributeId(),
+                                        e.getAttributeName(),
+                                        e.getAttributeValue(),
+                                        e.getText(),
+                                        e.isDisplayed(),
+                                        e.isEnabled(),
+                                        e.getSelectorType(),
+                                        e.getSelectorValue()))
+                .toList();
     }
 
     private static boolean hasReportableContent(ScriptRunReportData.Run run) {

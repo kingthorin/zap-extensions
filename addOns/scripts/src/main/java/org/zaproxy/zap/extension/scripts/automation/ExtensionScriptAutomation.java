@@ -186,12 +186,15 @@ public class ExtensionScriptAutomation extends ExtensionAdaptor {
                                             script.getLastErrorDetails());
                             plan.getProgress().error(message);
                             String screenshotBase64 = null;
+                            List<ScriptDiagnosticSource.WebElement> webElements = List.of();
                             if (script instanceof ScriptDiagnosticSource source) {
+                                var failure = source.getRunDiagnostics().failure();
                                 screenshotBase64 =
-                                        source.getRunDiagnostics()
-                                                .failure()
-                                                .map(RunFailureDiagnostic::screenshotBase64)
+                                        failure.map(RunFailureDiagnostic::screenshotBase64)
                                                 .orElse(null);
+                                webElements =
+                                        failure.map(RunFailureDiagnostic::webElements)
+                                                .orElse(List.of());
                             }
                             String outputDetail =
                                     StringUtils.defaultString(
@@ -215,7 +218,8 @@ public class ExtensionScriptAutomation extends ExtensionAdaptor {
                                                                                     ScriptRunRecorder
                                                                                             .OUTPUT_KIND_ERROR,
                                                                                     outputDetail)),
-                                                                    screenshotBase64)))));
+                                                                    screenshotBase64,
+                                                                    webElements)))));
                         });
             }
         }

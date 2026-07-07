@@ -140,6 +140,30 @@
 												th:if="${reportData.isIncludeSection('scriptdiagnosticsscreenshots') &amp;&amp; st.screenshot != null}">
 												<screenshot th:text="${st.screenshot}"></screenshot>
 											</th:block>
+											<th:block
+												th:if="${reportData.isIncludeSection('scriptdiagnosticsinteractables') &amp;&amp; !st.webElements.isEmpty()}">
+												<webElements>
+													<th:block th:each="we: ${st.webElements}">
+														<webElement>
+															<formIndex th:text="${we.formIndex}"></formIndex>
+															<tagName th:text="${we.tagName}"></tagName>
+															<attributeType
+																th:text="${we.attributeType}"></attributeType>
+															<attributeId th:text="${we.attributeId}"></attributeId>
+															<attributeName
+																th:text="${we.attributeName}"></attributeName>
+															<attributeValue
+																th:text="${we.attributeValue}"></attributeValue>
+															<text th:text="${we.text}"></text>
+															<displayed th:text="${we.displayed}"></displayed>
+															<enabled th:text="${we.enabled}"></enabled>
+															<selectorType th:text="${we.selectorType}"></selectorType>
+															<selectorValue
+																th:text="${we.selectorValue}"></selectorValue>
+														</webElement>
+													</th:block>
+												</webElements>
+											</th:block>
 										</step>
 									</th:block>
 								</steps>
