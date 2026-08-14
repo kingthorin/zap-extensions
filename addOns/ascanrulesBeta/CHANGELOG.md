@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Dependency update.
 - Maintenance changes.
 - Update references to avoid redirects.
+- HTTP Parameter Pollution scan rule(ID 20014): Updated detection with server-side impedance mismatch testing. Detects same-location and cross-location parameter pollution across query, form, and JSON locations (Issue #2224).
 
 ## [66] - 2026-05-06
 ### Changed
