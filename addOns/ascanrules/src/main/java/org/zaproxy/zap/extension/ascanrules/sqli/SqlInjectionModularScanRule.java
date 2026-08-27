@@ -103,6 +103,9 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     private int totalBudgetForParam = 0;
 
     private Map<String, Integer> techniqueBudgets;
+    private ParameterContext parameterContext;
+    private HttpMessage cachedBaseline;
+    private HttpMessage cachedControl;
 
     @Override
     public void init() {
@@ -174,6 +177,20 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     public void scan(HttpMessage msg, String param, String value) {
         this.paramName = param;
         this.originalValue = value;
+
+        try {
+            cachedBaseline = msg;
+            parameterContext = SqliContextAnalyzer.analyze(value, cachedBaseline);
+
+            cachedControl = getNewMsg();
+            setParameter(cachedControl, param, value + "_safe_control");
+            super.sendAndReceive(cachedControl);
+        } catch (IOException e) {
+            LOGGER.debug(
+                    "Failed to initialize parameter context for parameter [{}]: {}",
+                    param,
+                    e.getMessage());
+        }
 
         String[] techniqueNames = {
             "ERROR",
@@ -271,5 +288,20 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
             return techniqueBudgets.get(currentTechnique);
         }
         return 0;
+    }
+
+    @Override
+    public ParameterContext getParameterContext() {
+        return parameterContext;
+    }
+
+    @Override
+    public HttpMessage getCachedBaseline() {
+        return cachedBaseline;
+    }
+
+    @Override
+    public HttpMessage getCachedControl() {
+        return cachedControl;
     }
 }

@@ -78,4 +78,19 @@ public interface ScanContext {
      * the budget available to later techniques.
      */
     int getRemainingBudget();
+
+    /** Parameter context analysis hints for payload prioritization and strategy ordering. */
+    ParameterContext getParameterContext();
+
+    /**
+     * Cached baseline response (un-injected). Reused across strategies to avoid redundant
+     * requests.
+     */
+    HttpMessage getCachedBaseline();
+
+    /**
+     * Cached control response (injected with a safe, non-SQL-breaking value). Reused by strategies
+     * for false-positive validation.
+     */
+    HttpMessage getCachedControl();
 }

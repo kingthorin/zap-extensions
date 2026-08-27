@@ -43,8 +43,16 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
  */
 public class ErrorBasedDetectionStrategy implements DetectionStrategy {
 
-    /** Metacharacter payloads that tend to break a naively-concatenated SQL query. */
-    private static final List<String> ERROR_PAYLOADS =
+    /** String-context payloads: wrapped in quotes. */
+    private static final List<String> ERROR_PAYLOADS_STRING =
+            List.of("'", "\"", "';", "\");", "'(");
+
+    /** Numeric-context payloads: no quotes needed. */
+    private static final List<String> ERROR_PAYLOADS_NUMERIC =
+            List.of("+NULL", ",NULL", " NULL", " OR NULL", " AND NULL");
+
+    /** Fallback payloads for unknown context. */
+    private static final List<String> ERROR_PAYLOADS_FALLBACK =
             List.of("'", "\"", "';", "\");", "'(", ")", "NULL", "'\"");
 
     private final ResponseComparator comparator = new ResponseComparator();
@@ -55,19 +63,23 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
         int budget = context.getRemainingBudget();
         int used = 0;
 
-        // Get baseline response for response similarity comparison (honeypot detection)
-        HttpMessage baseline = context.newMessage();
-        context.setParam(baseline, originalValue);
-        context.sendAndReceive(baseline);
-        used++;
+        // Reuse cached baseline from scan initialization
+        HttpMessage baseline = context.getCachedBaseline();
+        if (baseline == null) {
+            baseline = context.newMessage();
+            context.setParam(baseline, originalValue);
+            context.sendAndReceive(baseline);
+            used++;
+        }
 
         // Early exit: if baseline itself contains an error signature, the page is broken
-        // (unrelated internal error), not vulnerable to injection
         if (DbErrorSignatures.identify(baseline.getResponseBody().toString()).isPresent()) {
             return false;
         }
 
-        for (String payload : ERROR_PAYLOADS) {
+        List<String> payloads = selectPayloads(context);
+
+        for (String payload : payloads) {
             if (context.isStopped() || used >= budget) {
                 return false;
             }
@@ -85,8 +97,6 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
             }
 
             if (used >= budget) {
-                // No budget left to run the false-positive control check -- without it we can't
-                // trust the match, so stop rather than risk alerting on an unconfirmed signature.
                 return false;
             }
             used++;
@@ -110,6 +120,20 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
             return true;
         }
         return false;
+    }
+
+    private List<String> selectPayloads(ScanContext context) {
+        var paramCtx = context.getParameterContext();
+        if (paramCtx == null) {
+            return ERROR_PAYLOADS_FALLBACK;
+        }
+        if (paramCtx.isNumericContext) {
+            return ERROR_PAYLOADS_NUMERIC;
+        }
+        if (paramCtx.isStringLiteralContext) {
+            return ERROR_PAYLOADS_STRING;
+        }
+        return ERROR_PAYLOADS_FALLBACK;
     }
 
 }
