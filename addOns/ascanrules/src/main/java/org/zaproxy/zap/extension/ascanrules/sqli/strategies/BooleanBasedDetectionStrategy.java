@@ -27,14 +27,14 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ResponseComparator;
 import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
 /**
- * Detects boolean-based blind SQL injection using the restrict→broaden cascade: for each of 9
- * payload triples, tries AND_TRUE first; if it matches the baseline, tries AND_FALSE; if
- * AND_FALSE also matches (empty result set case), falls back to OR_TRUE. Alerts on the first
- * successful match (restrict-verify or broaden-verify path).
+ * Detects boolean-based blind SQL injection using a restrict-then-verify approach: for each of
+ * 9 payload pairs, sends AND_TRUE first; if it matches the baseline, sends AND_FALSE; if
+ * AND_FALSE differs from the baseline, the parameter is injectable and an alert is raised.
  *
- * <p>The 9 triples target string contexts (single/double quote, with/without trailing comment)
- * and numeric contexts, matching baseline rule 40018's empirical strategy. This expansion from
- * prior 2-payload approach unlocks detection of string/date parameter contexts.
+ * <p>OR-based expansion (the old broaden fallback) is not used. An {@code OR <true expression>}
+ * in a WHERE clause returns every row on a vulnerable SELECT (DoS by data volume) or deletes /
+ * updates every row on a vulnerable DELETE/UPDATE. AND conditions restrict rather than expand
+ * the matched row set and are therefore safe to probe.
  *
  * <p>Deliberately re-sends the original value rather than comparing against {@link
  * ScanContext#getBaseMessage()}: that message is whatever was last seen for this URL (in ZAP's
@@ -92,7 +92,7 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
                             baseline, originalValue, originalValue, falseMsg, originalValue, falseValue);
 
             if (falseDiffersFromBaseline) {
-                // Restrict-verify: AND_TRUE~baseline AND AND_FALSE!=baseline. Alert.
+                // AND_TRUE~baseline AND AND_FALSE!=baseline: injectable. Alert.
                 context.newAlert()
                         .setConfidence(Alert.CONFIDENCE_MEDIUM)
                         .setParam(context.getParamName())
@@ -109,38 +109,7 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
                 return true;
             }
 
-            // AND_FALSE also matches baseline (no distinguishing data). Try OR_TRUE fallback.
-            if (used + 1 > budget) {
-                return false;
-            }
-
-            String orValue = originalValue + condition.orTrue();
-            HttpMessage orMsg = context.newMessage();
-            context.setParam(orMsg, orValue);
-            context.sendAndReceive(orMsg);
-            used++;
-
-            boolean orDiffersFromBaseline =
-                    !comparator.matchesExactlyAfterStripping(
-                            baseline, originalValue, originalValue, orMsg, originalValue, orValue);
-
-            if (orDiffersFromBaseline) {
-                // Broaden-verify: AND_FALSE~baseline BUT OR_TRUE!=baseline. Alert.
-                context.newAlert()
-                        .setConfidence(Alert.CONFIDENCE_MEDIUM)
-                        .setParam(context.getParamName())
-                        .setAttack(orValue)
-                        .setOtherInfo(
-                                "Page results were successfully manipulated using the boolean"
-                                        + " conditions ["
-                                        + orValue
-                                        + "] (via OR-based fallback, original AND conditions matched/matched)")
-                        .setMessage(orMsg)
-                        .raise();
-                return true;
-            }
-
-            // Neither restrict nor broaden path succeeded; try next payload pair
+            // AND_FALSE also matches baseline; no differential detected — try next pair
         }
 
         return false;

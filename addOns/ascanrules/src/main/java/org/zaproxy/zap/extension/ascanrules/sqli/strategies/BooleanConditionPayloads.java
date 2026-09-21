@@ -22,64 +22,45 @@ package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 import java.util.List;
 
 /**
- * Boolean condition payloads for SQL injection testing. Classic tautologies (1=1 / 1=2,
- * '1'='1' / '1'='2') were replaced with safer boolean condition pairs that are less likely to
- * be caught by WAF signatures while retaining reliable true/false page differentials.
+ * Boolean condition payloads for SQL injection detection. Each pair contains an AND_TRUE and
+ * AND_FALSE condition to drive a restrict-then-verify differential: AND_TRUE should match the
+ * baseline response; AND_FALSE should differ from it.
  *
- * <p>Each triple contains an AND_TRUE, AND_FALSE, and OR_TRUE variant to support the
- * restrict→broaden fallback cascade: try AND_TRUE; if it matches baseline, try AND_FALSE; if
- * AND_FALSE also matches (empty result set), fall back to OR_TRUE.
+ * <p>OR-based conditions are intentionally absent. An {@code OR <true expression>} in a WHERE
+ * clause acts as a universal tautology: on a vulnerable SELECT it returns every row in the
+ * table (potential DoS), and on a vulnerable DELETE/UPDATE it affects every row (catastrophic
+ * data loss). AND conditions are safe by contrast — they restrict, never expand, the matched
+ * row set beyond what the original query already returned.
  *
- * <p>The 9 triples cover string contexts (single/double quote, with/without trailing comment),
+ * <p>The 9 pairs cover string contexts (single/double quote, with/without trailing comment),
  * numeric contexts, and varied constructs (arithmetic comparison, BETWEEN, LIKE, IS NULL) for
  * broad DBMS portability.
  */
 public class BooleanConditionPayloads {
 
-    public record Condition(String andTrue, String andFalse, String orTrue) {}
+    public record Condition(String andTrue, String andFalse) {}
 
-    /** 9 boolean condition triples using safer, non-tautology boolean condition pairs. */
+    /** 9 boolean condition pairs for AND_TRUE / AND_FALSE differential detection. */
     public static final List<Condition> CONDITIONS =
             List.of(
                     // String context: single quote + arithmetic comparison with comment
-                    new Condition(
-                            "' AND 2>1 -- ",
-                            "' AND 2>3 -- ",
-                            "' OR 2>1 -- "),
+                    new Condition("' AND 2>1 -- ", "' AND 2>3 -- "),
                     // String context: double quote + arithmetic comparison with comment
-                    new Condition(
-                            "\" AND 2>1 -- ",
-                            "\" AND 2>3 -- ",
-                            "\" OR 2>1 -- "),
+                    new Condition("\" AND 2>1 -- ", "\" AND 2>3 -- "),
                     // Numeric context: arithmetic comparison with comment
-                    new Condition(" AND 2>1 -- ", " AND 2>3 -- ", " OR 2>1 -- "),
+                    new Condition(" AND 2>1 -- ", " AND 2>3 -- "),
                     // String context: single quote + BETWEEN without comment
-                    new Condition(
-                            "' AND 3 BETWEEN 2 AND 4",
-                            "' AND 3 BETWEEN 5 AND 6",
-                            "' OR 3 BETWEEN 2 AND 4"),
+                    new Condition("' AND 3 BETWEEN 2 AND 4", "' AND 3 BETWEEN 5 AND 6"),
                     // String context: double quote + BETWEEN without comment
-                    new Condition(
-                            "\" AND 3 BETWEEN 2 AND 4",
-                            "\" AND 3 BETWEEN 5 AND 6",
-                            "\" OR 3 BETWEEN 2 AND 4"),
+                    new Condition("\" AND 3 BETWEEN 2 AND 4", "\" AND 3 BETWEEN 5 AND 6"),
                     // Numeric context: arithmetic comparison without comment
-                    new Condition(" AND 2>1", " AND 2>3", " OR 2>1"),
+                    new Condition(" AND 2>1", " AND 2>3"),
                     // String context: single quote + LIKE with non-obvious prefix operand
-                    new Condition(
-                            "' AND 'abc' LIKE 'a%",
-                            "' AND 'abc' LIKE 'z%",
-                            "' OR 'abc' LIKE 'a%"),
+                    new Condition("' AND 'abc' LIKE 'a%", "' AND 'abc' LIKE 'z%"),
                     // Numeric context: LIKE with string literal
-                    new Condition(
-                            "1 AND 'abc' LIKE 'a%",
-                            "1 AND 'abc' LIKE 'z%",
-                            "1 OR 'abc' LIKE 'a%"),
+                    new Condition("1 AND 'abc' LIKE 'a%", "1 AND 'abc' LIKE 'z%"),
                     // String context: single quote + IS NULL / IS NOT NULL with comment
-                    new Condition(
-                            "' AND NULL IS NULL -- ",
-                            "' AND NULL IS NOT NULL -- ",
-                            "' OR NULL IS NULL -- "));
+                    new Condition("' AND NULL IS NULL -- ", "' AND NULL IS NOT NULL -- "));
 
     private BooleanConditionPayloads() {}
 }
