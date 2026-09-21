@@ -108,7 +108,14 @@ class BooleanBasedDetectionStrategyUnitTest
             // string, and reflecting it back here would make ComparableResponse see every
             // response as different just because the payload text differs.
             String value = getFirstParamValue(session, param);
-            if (value != null && (value.contains("'1'='2'") || value.contains("1=2"))) {
+            // Recognise the AND_FALSE variants of the safer boolean condition pairs:
+            // arithmetic (2>3), BETWEEN false range (BETWEEN 5 AND 6),
+            // LIKE false prefix (LIKE 'z%), and IS NOT NULL applied to NULL.
+            if (value != null
+                    && (value.contains("2>3")
+                            || value.contains("BETWEEN 5 AND 6")
+                            || value.contains("LIKE 'z%")
+                            || value.contains("IS NOT NULL"))) {
                 return newFixedLengthResponse("");
             }
             return newFixedLengthResponse("Some Content, matching row found");
