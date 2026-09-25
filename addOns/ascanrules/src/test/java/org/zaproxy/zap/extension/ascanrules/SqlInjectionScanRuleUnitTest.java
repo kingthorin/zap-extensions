@@ -25,6 +25,13 @@ package org.zaproxy.zap.extension.ascanrules;
  * <p>All scenario tests are inherited from {@link SqlInjectionScanRuleTestBase}, which is shared
  * with {@link SqlInjectionScanRule424242UnitTest}, so that both rules are benchmarked with the
  * exact same set of tests. Only the rule under test is provided here.
+ *
+ * <p>Measured noise: in one of 19 isolated runs a single parameterized error-based case ({@code
+ * [24] error = "oracle.jdbc"} of {@code shouldAlertOriginalParamPrefixMediumThreshold}) reported no
+ * alert; 18 further runs of the same scenarios were clean. The scenarios are unchanged from the
+ * pre-existing suite and no source of randomness was found in the rule or in {@code
+ * UrlParamValueHandler}, so a lone failing parameterized error case is not yet a trustworthy
+ * difference signal - rerun before drawing conclusions from it.
  */
 class SqlInjectionScanRuleUnitTest extends SqlInjectionScanRuleTestBase<SqlInjectionScanRule> {
 

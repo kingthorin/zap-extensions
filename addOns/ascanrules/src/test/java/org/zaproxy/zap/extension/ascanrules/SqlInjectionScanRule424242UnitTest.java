@@ -28,6 +28,12 @@ import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
  * with {@link SqlInjectionScanRuleUnitTest}, so that both rules are benchmarked with the exact same
  * set of tests. Only the rule under test is provided here; scenarios which fail for this rule (and
  * pass for the generic rule) are the signal the benchmark is meant to surface.
+ *
+ * <p>Recorded baseline when the shared scenarios were introduced (329 scenarios per rule, each
+ * wrapper run on its own): 40018 passes all 329, this rule fails 247 - 230 error-based, 8
+ * boolean-based, 7 outer (alert mappings, tech targeting, expression confirmation, message budget),
+ * 1 five-hundred and 1 union. These are recorded results, not outstanding test work: they say where
+ * this rule behaves differently from the generic one, and only the rule should change to move them.
  */
 class SqlInjectionScanRule424242UnitTest
         extends SqlInjectionScanRuleTestBase<SqlInjectionModularScanRule> {

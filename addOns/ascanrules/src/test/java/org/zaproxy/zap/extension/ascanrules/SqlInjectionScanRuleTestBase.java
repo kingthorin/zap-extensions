@@ -78,7 +78,13 @@ import org.zaproxy.zap.testutils.UrlParamValueHandler;
  *
  * <p>This is intentionally a side-by-side benchmark rather than a suite that adapts to the rule
  * under test: a scenario may pass for one rule and fail for the other, and such a difference is the
- * signal the comparison is meant to surface. Timing and OOB cases are out of scope.
+ * signal the comparison is meant to surface. Timing and OOB cases are out of scope. A scenario is
+ * not to be weakened so that a rule under test passes, the point is to record what each rule does.
+ *
+ * <p>Run the concrete classes one at a time (e.g. {@code --tests
+ * 'org.zaproxy.zap.extension.ascanrules.SqlInjectionScanRuleUnitTest'}), because the reports of the
+ * nested scenario classes are keyed by their own name and would otherwise merge the results of both
+ * rules into a single file.
  *
  * <p>The payload constants referenced from {@link SqlInjectionScanRule} are used as the canonical
  * payload vocabulary; the 424242 rule ports the same payload sets (see {@code
