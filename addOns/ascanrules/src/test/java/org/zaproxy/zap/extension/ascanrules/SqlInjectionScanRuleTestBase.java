@@ -28,6 +28,7 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.zaproxy.zap.testutils.RequestCondition.param;
 
 import com.strobel.functions.Supplier;
 import fi.iki.elonen.NanoHTTPD;
@@ -1283,6 +1284,59 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
             // When
             rule.scan();
             // Then
+            assertThat(alertsRaised, hasSize(0));
+        }
+    }
+
+    /**
+     * WAVSEP-inspired login bypass scenarios (Case01: injection in a login page with different 200
+     * responses): the page only logs in when the injected value contains a quote together with an
+     * OR based tautology, otherwise it consistently reports the failed login.
+     */
+    @Nested
+    class LoginBypass {
+
+        private static final String SUCCESS_BODY = "login success";
+        private static final String FAILURE_BODY = "login failed";
+
+        private UrlParamValueHandler orTautologyLoginPage() {
+            return UrlParamValueHandler.builder()
+                    .targetParam("username")
+                    .when(param("username").matches(v -> v.contains("'") && v.contains("OR")))
+                    .thenReturnHtml(SUCCESS_BODY)
+                    .fallbackHtmlResponse(FAILURE_BODY)
+                    .build();
+        }
+
+        @Test
+        void shouldAlertLoginBypassWithDifferent200Responses() throws Exception {
+            // Given
+            nano.addHandler(orTautologyLoginPage());
+            rule.init(getHttpMessage("/?username=admin"), parent);
+
+            // When
+            rule.scan();
+
+            // Then
+            assertThat(alertsRaised, hasSize(1));
+            assertThat(alertsRaised.get(0).getParam(), is(equalTo("username")));
+        }
+
+        @Test
+        void shouldNotAlertLoginBypassWhenResponsesAreIdentical() throws Exception {
+            // Given
+            nano.addHandler(
+                    UrlParamValueHandler.builder()
+                            .targetParam("username")
+                            .fallbackHtmlResponse(FAILURE_BODY)
+                            .build());
+            rule.init(getHttpMessage("/?username=admin"), parent);
+
+            // When
+            rule.scan();
+
+            // Then
+            assertThat(httpMessagesSent, hasSize(greaterThan(1)));
             assertThat(alertsRaised, hasSize(0));
         }
     }
