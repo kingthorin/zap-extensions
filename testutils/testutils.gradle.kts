@@ -18,6 +18,7 @@ tasks.withType<JavaCompile>().configureEach {
 
 dependencies {
     compileOnly(libs.testutils.zap)
+    testImplementation(libs.testutils.zap)
 
     implementation(project(":testutilscore"))
     implementation(project(":addOns:network"))
