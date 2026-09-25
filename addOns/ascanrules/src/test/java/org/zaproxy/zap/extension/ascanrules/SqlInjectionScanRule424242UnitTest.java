@@ -3,7 +3,7 @@
  *
  * ZAP is an HTTP/HTTPS proxy for assessing web application security.
  *
- * Copyright 2016 The ZAP Development Team
+ * Copyright 2026 The ZAP Development Team
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,18 +19,22 @@
  */
 package org.zaproxy.zap.extension.ascanrules;
 
+import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
+
 /**
- * Unit test for the generic SQL injection scan rule (id 40018).
+ * Unit test for the temporary SQL injection replacement scan rule (id 424242).
  *
  * <p>All scenario tests are inherited from {@link SqlInjectionScanRuleTestBase}, which is shared
- * with {@link SqlInjectionScanRule424242UnitTest}, so that both rules are benchmarked with the
- * exact same set of tests. Only the rule under test is provided here.
+ * with {@link SqlInjectionScanRuleUnitTest}, so that both rules are benchmarked with the exact same
+ * set of tests. Only the rule under test is provided here; scenarios which fail for this rule (and
+ * pass for the generic rule) are the signal the benchmark is meant to surface.
  */
-class SqlInjectionScanRuleUnitTest extends SqlInjectionScanRuleTestBase<SqlInjectionScanRule> {
+class SqlInjectionScanRule424242UnitTest
+        extends SqlInjectionScanRuleTestBase<SqlInjectionModularScanRule> {
 
     @Override
-    protected SqlInjectionScanRule createScanner() {
+    protected SqlInjectionModularScanRule createScanner() {
         mockMessages(new ExtensionAscanRules());
-        return new SqlInjectionScanRule();
+        return new SqlInjectionModularScanRule();
     }
 }
