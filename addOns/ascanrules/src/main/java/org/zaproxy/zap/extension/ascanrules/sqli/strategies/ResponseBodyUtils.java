@@ -22,6 +22,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import org.apache.commons.lang3.StringEscapeUtils;
+import org.parosproxy.paros.core.scanner.AbstractPlugin;
 
 /** Utilities for comparing response bodies in SQL injection detection strategies. */
 public final class ResponseBodyUtils {
@@ -46,9 +47,9 @@ public final class ResponseBodyUtils {
      * Removes all occurrences of the given patterns from {@code text}, stripping multiple encoding
      * forms: literal, URL-encoded, HTML-entity-encoded (single and double), and XML-escaped.
      *
-     * <p>This mirrors baseline rule 40018's {@code stripOff} / {@code stripOffOriginalAndAttackParam}
-     * logic, which strips the injected value in all its possible encoded forms to avoid the payload
-     * itself skewing response-body comparisons.
+     * <p>This mirrors baseline rule 40018's {@code stripOff} / {@code
+     * stripOffOriginalAndAttackParam} logic, which strips the injected value in all its possible
+     * encoded forms to avoid the payload itself skewing response-body comparisons.
      *
      * @param text the response body to strip from
      * @param patterns the substrings to remove (e.g., original param value, attack payload)
@@ -61,11 +62,17 @@ public final class ResponseBodyUtils {
         }
 
         String result = text;
-        for (String pattern : patterns) {
-            if (pattern == null || pattern.isEmpty()) {
-                continue;
-            }
+        // Strip longest patterns first: when one pattern is a prefix/substring of another (e.g.
+        // "payload" vs the sent value "payload%"), stripping the short one first mangles the long
+        // one's occurrence and leaves a partial remnant behind, manufacturing a difference between
+        // otherwise identical responses.
+        String[] ordered =
+                java.util.Arrays.stream(patterns)
+                        .filter(p -> p != null && !p.isEmpty())
+                        .sorted(java.util.Comparator.comparingInt(String::length).reversed())
+                        .toArray(String[]::new);
 
+        for (String pattern : ordered) {
             // Strip the literal pattern
             result = result.replaceAll("\\Q" + pattern + "\\E", "");
 
@@ -73,12 +80,13 @@ public final class ResponseBodyUtils {
             String urlEncoded = URLEncoder.encode(pattern, StandardCharsets.UTF_8);
             result = result.replaceAll("\\Q" + urlEncoded + "\\E", "");
 
-            // Strip HTML-entity-encoded form
-            String htmlEncoded = StringEscapeUtils.escapeHtml4(pattern);
+            // Strip HTML-entity-encoded form, using the same numeric entities (&#60;/&#62;) the
+            // generic rule (40018) reflects and strips via AbstractPlugin.getHTMLEncode
+            String htmlEncoded = AbstractPlugin.getHTMLEncode(pattern);
             result = result.replaceAll("\\Q" + htmlEncoded + "\\E", "");
 
             // Strip HTML-entity-encoded form of the URL-encoded pattern (double encoding)
-            String doubleEncoded = StringEscapeUtils.escapeHtml4(urlEncoded);
+            String doubleEncoded = AbstractPlugin.getHTMLEncode(urlEncoded);
             result = result.replaceAll("\\Q" + doubleEncoded + "\\E", "");
 
             // Strip XML-escaped form (preferred over XML 11 per baseline comment)

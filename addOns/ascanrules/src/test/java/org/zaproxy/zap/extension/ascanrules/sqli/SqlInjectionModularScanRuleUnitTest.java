@@ -30,8 +30,6 @@ import static org.hamcrest.Matchers.not;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
 import org.junit.jupiter.api.Test;
-import org.zaproxy.zap.extension.ascanrules.ExtensionAscanRules;
-import org.zaproxy.zap.testutils.ActiveScannerTestUtils;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 
 /**
@@ -40,18 +38,7 @@ import org.zaproxy.zap.testutils.NanoServerHandler;
  * individual {@link DetectionStrategy} has its own dedicated test alongside its implementation
  * (e.g. {@code strategies/ErrorBasedDetectionStrategyUnitTest}).
  */
-class SqlInjectionModularScanRuleUnitTest
-        extends ActiveScannerTestUtils<SqlInjectionModularScanRule> {
-
-    @Override
-    protected void setUpMessages() {
-        mockMessages(new ExtensionAscanRules());
-    }
-
-    @Override
-    protected SqlInjectionModularScanRule createScanner() {
-        return new SqlInjectionModularScanRule();
-    }
+class SqlInjectionModularScanRuleUnitTest extends AbstractSqlInjectionModularScanRuleTest {
 
     @Test
     void shouldHaveExpectedId() {

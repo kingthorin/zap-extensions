@@ -27,19 +27,19 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ResponseComparator;
 import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
 /**
- * Detects boolean-based blind SQL injection using a restrict-then-verify approach: for each of
- * 9 payload pairs, sends AND_TRUE first; if it matches the baseline, sends AND_FALSE; if
- * AND_FALSE differs from the baseline, the parameter is injectable and an alert is raised.
+ * Detects boolean-based blind SQL injection using a restrict-then-verify approach: for each of 9
+ * payload pairs, sends AND_TRUE first; if it matches the baseline, sends AND_FALSE; if AND_FALSE
+ * differs from the baseline, the parameter is injectable and an alert is raised.
  *
- * <p>OR-based expansion (the old broaden fallback) is not used. An {@code OR <true expression>}
- * in a WHERE clause returns every row on a vulnerable SELECT (DoS by data volume) or deletes /
- * updates every row on a vulnerable DELETE/UPDATE. AND conditions restrict rather than expand
- * the matched row set and are therefore safe to probe.
+ * <p>OR-based expansion (the old broaden fallback) is not used. An {@code OR <true expression>} in
+ * a WHERE clause returns every row on a vulnerable SELECT (DoS by data volume) or deletes / updates
+ * every row on a vulnerable DELETE/UPDATE. AND conditions restrict rather than expand the matched
+ * row set and are therefore safe to probe.
  *
  * <p>Deliberately re-sends the original value rather than comparing against {@link
- * ScanContext#getBaseMessage()}: that message is whatever was last seen for this URL (in ZAP's
- * unit test harness it's not even a real response), so a live baseline is the only reliable
- * comparison point.
+ * ScanContext#getBaseMessage()}: that message is whatever was last seen for this URL (in ZAP's unit
+ * test harness it's not even a real response), so a live baseline is the only reliable comparison
+ * point.
  */
 public class BooleanBasedDetectionStrategy implements DetectionStrategy {
 
@@ -47,16 +47,21 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
 
     @Override
     public boolean detect(ScanContext context) throws IOException {
-        String originalValue =
-                context.getOriginalValue() == null ? "" : context.getOriginalValue();
+        String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
         int budget = context.getRemainingBudget();
+        if (budget < 3) {
+            // Need at least baseline + one true/false probe pair; skip entirely (sends nothing) so
+            // LOW strength (budget 0, matching baseline rule 40018) costs no requests.
+            return false;
+        }
 
         HttpMessage baseline = context.newMessage();
         context.setParam(baseline, originalValue);
         context.sendAndReceive(baseline);
         int used = 1;
 
-        for (BooleanConditionPayloads.Condition condition : BooleanConditionPayloads.CONDITIONS) {
+        for (BooleanConditionPayloads.Condition condition :
+                BooleanConditionPayloads.conditionsFor(context.getAttackStrength())) {
             if (context.isStopped() || used + 2 > budget) {
                 return false;
             }
@@ -69,7 +74,12 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
 
             boolean trueMatchesBaseline =
                     comparator.matchesExactlyAfterStripping(
-                            baseline, originalValue, originalValue, trueMsg, originalValue, trueValue);
+                            baseline,
+                            originalValue,
+                            originalValue,
+                            trueMsg,
+                            originalValue,
+                            trueValue);
 
             if (!trueMatchesBaseline) {
                 // AND_TRUE didn't match baseline, try next payload pair
@@ -89,7 +99,12 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
 
             boolean falseDiffersFromBaseline =
                     !comparator.matchesExactlyAfterStripping(
-                            baseline, originalValue, originalValue, falseMsg, originalValue, falseValue);
+                            baseline,
+                            originalValue,
+                            originalValue,
+                            falseMsg,
+                            originalValue,
+                            falseValue);
 
             if (falseDiffersFromBaseline) {
                 // AND_TRUE~baseline AND AND_FALSE!=baseline: injectable. Alert.

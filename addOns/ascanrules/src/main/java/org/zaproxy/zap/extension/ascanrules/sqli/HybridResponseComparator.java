@@ -21,7 +21,6 @@ package org.zaproxy.zap.extension.ascanrules.sqli;
 
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.addon.commonlib.http.ComparableResponse;
-import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ResponseBodyUtils;
 
 /**
  * Hybrid response comparator that combines exact matching (strict, fast) with fuzzy matching
@@ -36,8 +35,8 @@ import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ResponseBodyUtils;
 public class HybridResponseComparator extends ResponseComparator {
 
     /**
-     * Hybrid comparison: try exact matching first, fall back to fuzzy with adaptive threshold.
-     * More adaptive than pure exact matching but maintains high confidence through staged approach.
+     * Hybrid comparison: try exact matching first, fall back to fuzzy with adaptive threshold. More
+     * adaptive than pure exact matching but maintains high confidence through staged approach.
      *
      * @param a first message
      * @param aOriginalValue original parameter value for message a
@@ -61,7 +60,8 @@ public class HybridResponseComparator extends ResponseComparator {
         }
 
         // Stage 2: Try exact matching first (strict, fast, confident)
-        if (matchesExactlyAfterStripping(a, aOriginalValue, aValueSent, b, bOriginalValue, bValueSent)) {
+        if (matchesExactlyAfterStripping(
+                a, aOriginalValue, aValueSent, b, bOriginalValue, bValueSent)) {
             return true;
         }
 
@@ -72,8 +72,8 @@ public class HybridResponseComparator extends ResponseComparator {
 
     /**
      * Fuzzy matching with adaptive threshold and SQL-injection-specific heuristics. Strategy: use
-     * SQL error patterns and result set size as primary signals, then apply fuzzy comparison.
-     * More reliable for real apps than generic fuzzy matching.
+     * SQL error patterns and result set size as primary signals, then apply fuzzy comparison. More
+     * reliable for real apps than generic fuzzy matching.
      *
      * @param a first message
      * @param aOriginalValue original parameter value for message a
@@ -123,11 +123,7 @@ public class HybridResponseComparator extends ResponseComparator {
      * @return true if similarity meets threshold
      */
     public boolean matchesFuzzyCustom(
-            HttpMessage a,
-            String aValueSent,
-            HttpMessage b,
-            String bValueSent,
-            float threshold) {
+            HttpMessage a, String aValueSent, HttpMessage b, String bValueSent, float threshold) {
 
         ComparableResponse respA = new ComparableResponse(a, aValueSent);
         ComparableResponse respB = new ComparableResponse(b, bValueSent);
@@ -148,10 +144,7 @@ public class HybridResponseComparator extends ResponseComparator {
      * @return true if fuzzy similarity meets 0.97 threshold
      */
     public boolean matchesFuzzyStrict(
-            HttpMessage a,
-            String aValueSent,
-            HttpMessage b,
-            String bValueSent) {
+            HttpMessage a, String aValueSent, HttpMessage b, String bValueSent) {
 
         ComparableResponse respA = new ComparableResponse(a, aValueSent);
         ComparableResponse respB = new ComparableResponse(b, bValueSent);

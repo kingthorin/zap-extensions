@@ -30,9 +30,8 @@ import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
 import org.junit.jupiter.api.Test;
-import org.zaproxy.zap.extension.ascanrules.ExtensionAscanRules;
+import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
-import org.zaproxy.zap.testutils.ActiveScannerTestUtils;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 
 /**
@@ -40,18 +39,7 @@ import org.zaproxy.zap.testutils.NanoServerHandler;
  * SqlInjectionModularScanRule} orchestrator against a real (embedded) HTTP server, matching the
  * repo's existing NanoHTTPD-based scan rule test convention.
  */
-class ErrorBasedDetectionStrategyUnitTest
-        extends ActiveScannerTestUtils<SqlInjectionModularScanRule> {
-
-    @Override
-    protected void setUpMessages() {
-        mockMessages(new ExtensionAscanRules());
-    }
-
-    @Override
-    protected SqlInjectionModularScanRule createScanner() {
-        return new SqlInjectionModularScanRule();
-    }
+class ErrorBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRuleTest {
 
     @Test
     void shouldAlertWhenSqlMetacharacterTriggersRealDbError() throws Exception {

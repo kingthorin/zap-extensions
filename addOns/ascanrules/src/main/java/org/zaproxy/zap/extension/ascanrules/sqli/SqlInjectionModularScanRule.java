@@ -33,12 +33,16 @@ import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.core.scanner.Category;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.addon.commonlib.CommonAlertTag;
+import org.zaproxy.addon.commonlib.PolicyTag;
 import org.zaproxy.zap.extension.ascanrules.CommonActiveScanRuleInfo;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.BooleanBasedDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ErrorBasedDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ExpressionBasedDetectionStrategy;
+import org.zaproxy.zap.extension.ascanrules.sqli.strategies.LoginBypassDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.OrderByDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.UnionBasedDetectionStrategy;
+import org.zaproxy.zap.model.Tech;
+import org.zaproxy.zap.model.TechSet;
 
 /**
  * Modular SQL injection active scan rule, built to be a deliberately non-monolithic alternative to
@@ -64,9 +68,22 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
         Map<String, String> alertTags =
                 new HashMap<>(
                         CommonAlertTag.toMap(
+                                CommonAlertTag.API_2023_API10_UNSAFE_CONSUMPTION,
+                                CommonAlertTag.OWASP_2025_A05_INJECTION,
                                 CommonAlertTag.OWASP_2021_A03_INJECTION,
                                 CommonAlertTag.OWASP_2017_A01_INJECTION,
-                                CommonAlertTag.WSTG_V42_INPV_05_SQLI));
+                                CommonAlertTag.WSTG_V42_INPV_05_SQLI,
+                                CommonAlertTag.HIPAA,
+                                CommonAlertTag.PCI_DSS));
+        alertTags.put(PolicyTag.API.getTag(), "");
+        alertTags.put(PolicyTag.DEV_CICD.getTag(), "");
+        alertTags.put(PolicyTag.DEV_STD.getTag(), "");
+        alertTags.put(PolicyTag.DEV_FULL.getTag(), "");
+        alertTags.put(PolicyTag.QA_CICD.getTag(), "");
+        alertTags.put(PolicyTag.QA_STD.getTag(), "");
+        alertTags.put(PolicyTag.QA_FULL.getTag(), "");
+        alertTags.put(PolicyTag.SEQUENCE.getTag(), "");
+        alertTags.put(PolicyTag.PENTEST.getTag(), "");
         ALERT_TAGS = Collections.unmodifiableMap(alertTags);
     }
 
@@ -81,20 +98,21 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
                     new BooleanBasedDetectionStrategy(),
                     new ExpressionBasedDetectionStrategy(),
                     new OrderByDetectionStrategy(),
-                    new UnionBasedDetectionStrategy());
+                    new UnionBasedDetectionStrategy(),
+                    new LoginBypassDetectionStrategy());
 
-    // Per-technique budgets, matching baseline's ceilings (SqlInjectionScanRule init(), lines
-    // 488-543). Each strategy draws from its own reserved allocation, not a shared pool, enabling
-    // fuller exploitation of detection payloads. Baseline at MEDIUM: error=8, expression=8,
-    // boolean=6, union=5 (~27 total). Optimal sweet spot (Loop 2):
-    // expression=20, union=15, orderby=10 (111/132 = 84.1%, only 3 cases from baseline).
+    // Per-technique budgets, mirroring baseline rule 40018's ceilings (SqlInjectionScanRule
+    // init(), lines 493-543): LOW = error + expression only; MEDIUM adds boolean/union (no order
+    // by, no LIKE); HIGH adds order by; LIKE conditions are gated on HIGH by the boolean strategy.
+    // Each strategy draws from its own reserved allocation, not a shared pool.
     private static final Map<String, int[]> TECHNIQUE_BUDGETS =
             Map.ofEntries(
-                    Map.entry("ERROR", new int[] {8, 12, 20, 50}),
-                    Map.entry("EXPRESSION", new int[] {10, 20, 30, 50}),
-                    Map.entry("BOOLEAN", new int[] {8, 12, 20, 50}),
-                    Map.entry("ORDERBY", new int[] {5, 10, 20, 50}),
-                    Map.entry("UNION", new int[] {5, 15, 25, 50}));
+                    Map.entry("ERROR", new int[] {4, 8, 16, 50}),
+                    Map.entry("EXPRESSION", new int[] {4, 8, 16, 50}),
+                    Map.entry("BOOLEAN", new int[] {0, 8, 20, 50}),
+                    Map.entry("ORDERBY", new int[] {0, 0, 5, 50}),
+                    Map.entry("UNION", new int[] {0, 5, 10, 50}),
+                    Map.entry("LOGINBYPASS", new int[] {0, 6, 6, 6}));
 
     private String paramName;
     private String originalValue;
@@ -193,11 +211,7 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
         }
 
         String[] techniqueNames = {
-            "ERROR",
-            "BOOLEAN",
-            "EXPRESSION",
-            "ORDERBY",
-            "UNION"
+            "ERROR", "BOOLEAN", "EXPRESSION", "ORDERBY", "UNION", "LOGINBYPASS"
         };
 
         for (int i = 0; i < strategies.size(); i++) {
@@ -280,6 +294,51 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     @Override
     public org.zaproxy.zap.model.TechSet getTechSet() {
         return super.getTechSet();
+    }
+
+    /**
+     * Returns true if the tech is a child of Tech.Db.
+     *
+     * @param tech the tech to check
+     * @return true if the tech is a child of Tech.Db
+     */
+    private static boolean isDb(Tech tech) {
+        Tech parent = tech.getParent();
+        if (parent == null) {
+            return false;
+        }
+        if (Tech.Db.equals(parent)) {
+            return true;
+        }
+        return isDb(parent);
+    }
+
+    /**
+     * Returns true if the tech is an SQL related tech. Explicitly excludes known no-sql techs,
+     * mirroring baseline rule 40018's targeting.
+     *
+     * @param tech the tech to check
+     * @return true if the supplied tech is SQL related
+     */
+    private static boolean isSqlDb(Tech tech) {
+        if (Tech.MongoDB.equals(tech) || Tech.CouchDB.equals(tech)) {
+            return false;
+        }
+        return isDb(tech);
+    }
+
+    @Override
+    public boolean targets(TechSet technologies) {
+        if (technologies.includes(Tech.Db)) {
+            return true;
+        }
+
+        for (Tech tech : technologies.getIncludeTech()) {
+            if (isSqlDb(tech)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

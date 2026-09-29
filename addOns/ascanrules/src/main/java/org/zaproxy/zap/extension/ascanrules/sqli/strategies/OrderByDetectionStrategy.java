@@ -36,8 +36,8 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
  * is 2 requests (if ASC differs from baseline, stop early) or 3 requests (full cascade).
  *
  * <p>Deliberately re-sends the original value rather than comparing against {@link
- * ScanContext#getBaseMessage()}: that message is stale for real scanning, so a live baseline is
- * the only reliable comparison point.
+ * ScanContext#getBaseMessage()}: that message is stale for real scanning, so a live baseline is the
+ * only reliable comparison point.
  */
 public class OrderByDetectionStrategy implements DetectionStrategy {
 
@@ -45,8 +45,7 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
 
     @Override
     public boolean detect(ScanContext context) throws IOException {
-        String originalValue =
-                context.getOriginalValue() == null ? "" : context.getOriginalValue();
+        String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
         int budget = context.getRemainingBudget();
         if (budget < 2) {
             // Minimum 2 requests: baseline + ASC (DESC only sent if ASC matches)
@@ -65,7 +64,9 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         context.sendAndReceive(ascMsg);
 
         // Check if ASC matches baseline (ResponseComparator handles stripping)
-        boolean ascMatchesBaseline = comparator.matchesExactlyAfterStripping(baseline, originalValue, originalValue, ascMsg, originalValue, ascPayload);
+        boolean ascMatchesBaseline =
+                comparator.matchesExactlyAfterStripping(
+                        baseline, originalValue, originalValue, ascMsg, originalValue, ascPayload);
 
         if (!ascMatchesBaseline) {
             // ASC doesn't match baseline — injection unlikely, bail early
@@ -85,7 +86,13 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
 
         // Check if DESC differs from baseline
         boolean descDiffersFromBaseline =
-                !comparator.matchesExactlyAfterStripping(baseline, originalValue, originalValue, descMsg, originalValue, descPayload);
+                !comparator.matchesExactlyAfterStripping(
+                        baseline,
+                        originalValue,
+                        originalValue,
+                        descMsg,
+                        originalValue,
+                        descPayload);
 
         if (descDiffersFromBaseline) {
             context.newAlert()

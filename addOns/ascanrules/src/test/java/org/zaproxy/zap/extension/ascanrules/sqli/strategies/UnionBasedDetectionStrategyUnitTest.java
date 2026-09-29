@@ -28,32 +28,19 @@ import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
 import org.junit.jupiter.api.Test;
-import org.zaproxy.zap.extension.ascanrules.ExtensionAscanRules;
-import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
-import org.zaproxy.zap.testutils.ActiveScannerTestUtils;
+import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 
 /**
  * Integration test for {@link UnionBasedDetectionStrategy} based on WAVSEP test case:
  * SQL-Injection/SInjection-Detection-Evaluation-GET-200Error/Case02-InjectionInSearch-String-UnionExploit-With200Errors.jsp
  *
- * <p>Tests UNION-based SQL injection in a LIKE clause where:
- * - Normal query: SELECT msgid, title, message FROM messages WHERE message like'<input>%'
- * - UNION attack: message like'' UNION ALL SELECT ... -- %'
- * - Expected response: Either UNION error signature or different data (3 columns expected)
+ * <p>Tests UNION-based SQL injection in a LIKE clause where: - Normal query: SELECT msgid, title,
+ * message FROM messages WHERE message like'<input>%' - UNION attack: message like'' UNION ALL
+ * SELECT ... -- %' - Expected response: Either UNION error signature or different data (3 columns
+ * expected)
  */
-class UnionBasedDetectionStrategyUnitTest
-        extends ActiveScannerTestUtils<SqlInjectionModularScanRule> {
-
-    @Override
-    protected void setUpMessages() {
-        mockMessages(new ExtensionAscanRules());
-    }
-
-    @Override
-    protected SqlInjectionModularScanRule createScanner() {
-        return new SqlInjectionModularScanRule();
-    }
+class UnionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRuleTest {
 
     @Test
     void shouldAlertOnUnionBasedInjectionInLikeClause() throws Exception {
@@ -64,16 +51,21 @@ class UnionBasedDetectionStrategyUnitTest
 
         rule.scan();
 
-        assertThat(
-                "Should detect UNION-based injection in LIKE clause",
-                alertsRaised,
-                hasSize(1));
+        assertThat("Should detect UNION-based injection in LIKE clause", alertsRaised, hasSize(1));
     }
 
     @Test
     void shouldNotAlertOnNormalSearchQuery() throws Exception {
+        // A search page that returns the same results no matter what is put in the parameter:
+        // nothing for the UNION strategy to exploit, so the rule must stay quiet.
         String path = "/sqli/union/search/";
-        nano.addHandler(new UnionInjectableHandler(path, "msg"));
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        return newFixedLengthResponse(normalResponse());
+                    }
+                });
         rule.init(getHttpMessage(path + "?msg=hello"), parent);
 
         rule.scan();
@@ -82,15 +74,23 @@ class UnionBasedDetectionStrategyUnitTest
         assertThat(alertsRaised, empty());
     }
 
+    private static String normalResponse() {
+        return "<html><body><table>"
+                + "<tr><td>1</td><td>Title1</td><td>Message1</td></tr>"
+                + "<tr><td>2</td><td>Title2</td><td>Message2</td></tr>"
+                + "</table></body></html>";
+    }
+
     /**
      * Simulates WAVSEP Case02: vulnerable LIKE clause that accepts UNION payloads.
      *
      * <p>Vulnerable SQL: SELECT msgid, title, message FROM messages WHERE message like'<input>%'
      *
-     * <p>When input='UNION ALL SELECT 1,2,3 --, the query becomes:
-     * SELECT msgid, title, message FROM messages WHERE message like''UNION ALL SELECT 1,2,3 -- %'
+     * <p>When input='UNION ALL SELECT 1,2,3 --, the query becomes: SELECT msgid, title, message
+     * FROM messages WHERE message like''UNION ALL SELECT 1,2,3 -- %'
      *
-     * <p>Expected: Either UNION-specific error (column mismatch) or different result set with 3 columns.
+     * <p>Expected: Either UNION-specific error (column mismatch) or different result set with 3
+     * columns.
      */
     private static class UnionInjectableHandler extends NanoServerHandler {
         private final String param;
@@ -118,7 +118,8 @@ class UnionBasedDetectionStrategyUnitTest
                         "ERROR: The used SELECT statements have a different number of columns");
             }
 
-            // Non-UNION injection attempts (error-based, boolean-based) should get normal or error response
+            // Non-UNION injection attempts (error-based, boolean-based) should get normal or error
+            // response
             if (value.contains("'") || value.contains("\"")) {
                 return newFixedLengthResponse(
                         NanoHTTPD.Response.Status.OK,
@@ -127,13 +128,6 @@ class UnionBasedDetectionStrategyUnitTest
             }
 
             return newFixedLengthResponse(normalResponse());
-        }
-
-        private String normalResponse() {
-            return "<html><body><table>"
-                    + "<tr><td>1</td><td>Title1</td><td>Message1</td></tr>"
-                    + "<tr><td>2</td><td>Title2</td><td>Message2</td></tr>"
-                    + "</table></body></html>";
         }
     }
 }

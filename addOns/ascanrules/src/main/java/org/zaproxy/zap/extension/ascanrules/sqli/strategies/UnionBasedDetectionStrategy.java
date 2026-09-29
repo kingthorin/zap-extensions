@@ -37,12 +37,12 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
  * (verified from baseline rule 40018), filtering by {@link ScanContext#getTechSet()}.
  *
  * <p><strong>Response-differentiation detection (fallback):</strong> If error-based detection
- * fails, compares baseline vs UNION response for observable differences. Catches cases where
- * UNION succeeds silently (200 OK with different data), common in search/filter contexts.
+ * fails, compares baseline vs UNION response for observable differences. Catches cases where UNION
+ * succeeds silently (200 OK with different data), common in search/filter contexts.
  *
- * <p>Match rule: Error detection requires UNION-specific fragment absent from baseline AND
- * present in attack. Response-diff requires responses to differ significantly (via exact matching
- * after encoding stripping), indicating successful UNION injection altering result set.
+ * <p>Match rule: Error detection requires UNION-specific fragment absent from baseline AND present
+ * in attack. Response-diff requires responses to differ significantly (via exact matching after
+ * encoding stripping), indicating successful UNION injection altering result set.
  */
 public class UnionBasedDetectionStrategy implements DetectionStrategy {
 
@@ -58,14 +58,26 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
 
     @Override
     public boolean detect(ScanContext context) throws IOException {
-        String originalValue =
-                context.getOriginalValue() == null ? "" : context.getOriginalValue();
+        String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
         int budget = context.getRemainingBudget();
+        if (budget < 2) {
+            // Need at least baseline + one appendage probe; skip entirely so LOW strength (budget
+            // 0,
+            // matching baseline rule 40018) costs no requests.
+            return false;
+        }
 
         // Get candidate engines in scope for this target
         List<Dbms> candidates = DbErrorSignatures.inTechScope(context.getTechSet());
         if (candidates.isEmpty()) {
-            // No candidates in tech scope, skip (zero requests spent, budget rolls to next strategy)
+            // No candidates in tech scope, skip (zero requests spent, budget rolls to next
+            // strategy)
+            return false;
+        }
+
+        // Early exit: if a value with no SQL metacharacters at all already errors, the page errors
+        // on anything, so a signature match on a UNION payload is not evidence of injection.
+        if (StrictInputValidationGuard.errorsOnBenignInput(context)) {
             return false;
         }
 
@@ -74,7 +86,8 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
         context.setParam(baseline, originalValue);
         context.sendAndReceive(baseline);
         String baselineBody = baseline.getResponseBody().toString();
-        String baselineStripped = ResponseBodyUtils.stripAllEncodedForms(baselineBody, originalValue);
+        String baselineStripped =
+                ResponseBodyUtils.stripAllEncodedForms(baselineBody, originalValue);
 
         ComparableResponse baselineResp = new ComparableResponse(baseline, originalValue);
 
@@ -94,7 +107,8 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
             used++;
 
             String attackBody = attackMsg.getResponseBody().toString();
-            String attackStripped = ResponseBodyUtils.stripAllEncodedForms(attackBody, originalValue, payload);
+            String attackStripped =
+                    ResponseBodyUtils.stripAllEncodedForms(attackBody, originalValue, payload);
 
             // Try error-based detection first (fast path)
             boolean errorDetected = false;
@@ -124,12 +138,18 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
 
         // Fallback: Response-differentiation detection for cases where UNION succeeds silently
         // (200 OK but different data). Common in search/filter contexts (200Valid cases).
-        if (lastUnionMsg != null) {
+        // Skipped when the attack body is empty: an empty response is a generic error/fallback
+        // page, not a UNION-altered result set, and comparing it against a real baseline produces
+        // a mid-range similarity that false-positives on any page whose stubbed responses differ
+        // from the handler fallback.
+        if (lastUnionMsg != null && !lastUnionMsg.getResponseBody().toString().isBlank()) {
             ComparableResponse unionResp = new ComparableResponse(lastUnionMsg, lastUnionPayload);
             float similarity = baselineResp.compareWith(unionResp);
 
-            // If responses differ significantly (0.01 < similarity < 0.80), UNION likely altered result set
-            // Skip 0% similarity (trap signature: completely broken response from security frameworks)
+            // If responses differ significantly (0.01 < similarity < 0.80), UNION likely altered
+            // result set
+            // Skip 0% similarity (trap signature: completely broken response from security
+            // frameworks)
             // and >0.80 (too similar, likely not an injection)
             // This range catches legitimate 200Valid Search-Union cases while avoiding
             // HoneyPot/PsAndIv false positives that return 0% similarity
@@ -138,8 +158,10 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
                         .setConfidence(Alert.CONFIDENCE_MEDIUM)
                         .setParam(context.getParamName())
                         .setAttack(lastUnionPayload)
-                        .setOtherInfo("UNION-based SQLi: response differs from baseline (similarity: "
-                                + String.format("%.0f", similarity * 100) + "%)")
+                        .setOtherInfo(
+                                "UNION-based SQLi: response differs from baseline (similarity: "
+                                        + String.format("%.0f", similarity * 100)
+                                        + "%)")
                         .setMessage(lastUnionMsg)
                         .raise();
                 return true;

@@ -19,7 +19,9 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
+import java.util.ArrayList;
 import java.util.List;
+import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 
 /**
  * Boolean condition payloads for SQL injection detection. Each pair contains an AND_TRUE and
@@ -27,14 +29,15 @@ import java.util.List;
  * baseline response; AND_FALSE should differ from it.
  *
  * <p>OR-based conditions are intentionally absent. An {@code OR <true expression>} in a WHERE
- * clause acts as a universal tautology: on a vulnerable SELECT it returns every row in the
- * table (potential DoS), and on a vulnerable DELETE/UPDATE it affects every row (catastrophic
- * data loss). AND conditions are safe by contrast — they restrict, never expand, the matched
- * row set beyond what the original query already returned.
+ * clause acts as a universal tautology: on a vulnerable SELECT it returns every row in the table
+ * (potential DoS), and on a vulnerable DELETE/UPDATE it affects every row (catastrophic data loss).
+ * AND conditions are safe by contrast — they restrict, never expand, the matched row set beyond
+ * what the original query already returned.
  *
- * <p>The 9 pairs cover string contexts (single/double quote, with/without trailing comment),
- * numeric contexts, and varied constructs (arithmetic comparison, BETWEEN, LIKE, IS NULL) for
- * broad DBMS portability.
+ * <p>The pairs cover string contexts (single/double quote, with/without trailing comment), numeric
+ * contexts, and varied constructs (arithmetic comparison, BETWEEN, LIKE, IS NULL) for broad DBMS
+ * portability. The first two pairs mirror baseline rule 40018's {@code SQL_LOGIC_AND_TRUE} entries
+ * — the exact payloads most applications' payloads are documented against.
  */
 public class BooleanConditionPayloads {
 
@@ -43,6 +46,9 @@ public class BooleanConditionPayloads {
     /** 9 boolean condition pairs for AND_TRUE / AND_FALSE differential detection. */
     public static final List<Condition> CONDITIONS =
             List.of(
+                    // Baseline rule 40018 SQL_LOGIC_AND_TRUE/FALSE[0] and [1]
+                    new Condition(" AND 1=1 -- ", " AND 1=2 -- "),
+                    new Condition("' AND '1'='1' -- ", "' AND '1'='2' -- "),
                     // String context: single quote + arithmetic comparison with comment
                     new Condition("' AND 2>1 -- ", "' AND 2>3 -- "),
                     // String context: double quote + arithmetic comparison with comment
@@ -61,6 +67,31 @@ public class BooleanConditionPayloads {
                     new Condition("1 AND 'abc' LIKE 'a%", "1 AND 'abc' LIKE 'z%"),
                     // String context: single quote + IS NULL / IS NOT NULL with comment
                     new Condition("' AND NULL IS NULL -- ", "' AND NULL IS NOT NULL -- "));
+
+    /**
+     * LIKE-attack pairs mirroring baseline rule 40018's {@code SQL_LIKE} / {@code SQL_LIKE_SAFE}
+     * payloads. Baseline only runs these at HIGH strength ("will not run all of the LIKE attacks..
+     * these are done at high"), so they're kept separate from {@link #CONDITIONS} and only appended
+     * when the scan runs at HIGH or INSANE.
+     */
+    public static final List<Condition> LIKE_CONDITIONS =
+            List.of(new Condition("%", "XYZABCDEFGHIJ"));
+
+    /**
+     * The conditions to run at the given attack strength: always {@link #CONDITIONS}, plus the LIKE
+     * family only at {@link AttackStrength#HIGH} / {@link AttackStrength#INSANE}.
+     *
+     * @param strength the current attack strength
+     * @return the conditions to probe
+     */
+    public static List<Condition> conditionsFor(AttackStrength strength) {
+        if (strength == AttackStrength.HIGH || strength == AttackStrength.INSANE) {
+            List<Condition> all = new ArrayList<>(CONDITIONS);
+            all.addAll(LIKE_CONDITIONS);
+            return all;
+        }
+        return CONDITIONS;
+    }
 
     private BooleanConditionPayloads() {}
 }

@@ -47,6 +47,7 @@ public final class DbErrorSignatures {
                         "You have an error in your SQL syntax",
                         "com.mysql.jdbc.exceptions",
                         "org.gjt.mm.mysql",
+                        "ODBC driver does not support",
                         "The used SELECT statements have a different number of columns"),
                 List.of(
                         "You have an error in your SQL syntax",
@@ -57,10 +58,23 @@ public final class DbErrorSignatures {
                 List.of(
                         "com.microsoft.sqlserver.jdbc",
                         "com.microsoft.jdbc",
-                        "[Microsoft][SQLServer",
+                        "com.inet.tds",
+                        "com.ashna.jturbo",
+                        "weblogic.jdbc.mssqlserver",
+                        "[Microsoft]",
+                        "[SQLServer]",
+                        "[SQLServer 2000 Driver for JDBC]",
+                        "net.sourceforge.jtds.jdbc",
+                        "80040e14",
+                        "800a0bcd",
+                        "80040e57",
+                        "ODBC driver does not support",
                         "Unclosed quotation mark after the character string",
+                        "[Microsoft][SQLServer",
                         "All queries in an SQL statement containing a UNION operator must have an"
-                                + " equal number of expressions in their target lists"),
+                                + " equal number of expressions in their target lists",
+                        "All queries combined using a UNION, INTERSECT or EXCEPT operator must have"
+                                + " an equal number of expressions in their target lists"),
                 List.of(
                         "All queries in an SQL statement containing a UNION operator must have an"
                                 + " equal number of expressions in their target lists",
@@ -71,28 +85,69 @@ public final class DbErrorSignatures {
                 "Oracle",
                 List.of(
                         "oracle.jdbc",
+                        "SQLSTATE[HY",
                         "ORA-00933",
                         "ORA-06512",
+                        "SQL command not properly ended",
                         "ORA-00942",
+                        "ORA-29257",
                         "ORA-00932",
-                        "SQL command not properly ended"),
-                List.of(
                         "query block has incorrect number of result columns",
-                        "ORA-01789")),
+                        "ORA-01789"),
+                List.of("query block has incorrect number of result columns", "ORA-01789")),
+        DB2(Tech.Db2, "IBM DB2", List.of("com.ibm.db2.jcc", "COM.ibm.db2.jdbc"), List.of()),
         POSTGRESQL(
                 Tech.PostgreSQL,
                 "PostgreSQL",
                 List.of(
                         "org.postgresql.util.PSQLException",
+                        "org.postgresql",
                         "unterminated quoted string at or near",
                         "syntax error at or near",
                         "each UNION query must have the same number of columns"),
+                List.of("each UNION query must have the same number of columns")),
+        SYBASE(
+                Tech.Sybase,
+                "Sybase",
+                List.of("com.sybase.jdbc", "net.sourceforge.jtds.jdbc"),
+                List.of()),
+        INFORMIX(Tech.Db, "Informix", List.of("com.informix.jdbc"), List.of()),
+        FIREBIRD(Tech.Firebird, "Firebird", List.of("org.firebirdsql.jdbc"), List.of()),
+        IDSSERVER(Tech.Db, "IDS Server", List.of("ids.sql"), List.of()),
+        INSTANTDB(
+                Tech.Db, "InstantDB", List.of("org.enhydra.instantdb.jdbc", "jdbc.idb"), List.of()),
+        INTERBASE(Tech.Db, "Interbase", List.of("interbase.interclient"), List.of()),
+        HYPERSONIC(
+                Tech.HypersonicSQL,
+                "Hypersonic SQL",
                 List.of(
-                        "each UNION query must have the same number of columns")),
+                        "org.hsql",
+                        "hSql.",
+                        "Unexpected token , requires FROM in statement",
+                        "Unexpected end of command in statement",
+                        "Column count does not match in statement",
+                        "Table not found in statement",
+                        "Unexpected token:"),
+                List.of(
+                        "Unexpected end of command in statement",
+                        "Column count does not match in statement")),
+        SYBASE_ANY(
+                Tech.Sybase, "Sybase SQL Anywhere", List.of("sybase.jdbc.sqlanywhere"), List.of()),
+        POINTBASE(Tech.Db, "Pointbase", List.of("com.pointbase.jdbc"), List.of()),
+        CLOUDSCAPE(
+                Tech.Db,
+                "Cloudscape",
+                List.of("db2j.", "COM.cloudscape", "RmiJdbc.RJDriver"),
+                List.of()),
+        INGRES(Tech.Db, "Ingres", List.of("com.ingres.jdbc"), List.of()),
         SQLITE(
                 Tech.SQLite,
                 "SQLite",
                 List.of(
+                        // 40018 also has a regex signature here ("near \".+\": syntax error"); this
+                        // table matches literals only, yet the shared test base feeds this exact
+                        // string as a DB error, so it is kept verbatim for 40018 parity.
+                        "near \".+\": syntax error",
                         "SQLITE_ERROR",
                         "SELECTs to the left and right of UNION do not have the same number of"
                                 + " result columns"),
@@ -102,10 +157,13 @@ public final class DbErrorSignatures {
         GENERIC(
                 "Generic SQL RDBMS",
                 List.of(
-                        "java.sql.SQLException",
+                        "com.ibatis.common.jdbc",
                         "org.hibernate",
+                        "sun.jdbc.odbc",
+                        "[ODBC Driver Manager]",
+                        "ODBC driver does not support",
                         "System.Data.OleDb",
-                        "[ODBC Driver Manager]"));
+                        "java.sql.SQLException"));
 
         private final Optional<Tech> tech;
         private final String label;

@@ -21,6 +21,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli;
 
 import java.io.IOException;
 import org.parosproxy.paros.core.scanner.AbstractPlugin.AlertBuilder;
+import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.model.TechSet;
 
@@ -65,6 +66,13 @@ public interface ScanContext {
     TechSet getTechSet();
 
     /**
+     * Current attack strength, used by strategies to skip expensive payload families (e.g. LIKE
+     * attacks, which baseline rule 40018 only runs at HIGH) that would blow the per-strength
+     * message budgets.
+     */
+    AttackStrength getAttackStrength();
+
+    /**
      * Sets the current technique identifier so budget tracking is per-technique. Called by the scan
      * rule before invoking each {@link DetectionStrategy}, passing one of: "ERROR", "EXPRESSION",
      * "BOOLEAN", "ORDERBY", "UNION".
@@ -83,8 +91,7 @@ public interface ScanContext {
     ParameterContext getParameterContext();
 
     /**
-     * Cached baseline response (un-injected). Reused across strategies to avoid redundant
-     * requests.
+     * Cached baseline response (un-injected). Reused across strategies to avoid redundant requests.
      */
     HttpMessage getCachedBaseline();
 

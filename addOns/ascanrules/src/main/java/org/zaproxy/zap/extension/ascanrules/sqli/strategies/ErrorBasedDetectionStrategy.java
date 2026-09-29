@@ -77,9 +77,31 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
             return false;
         }
 
+        // Early exit: if a value with no SQL metacharacters at all already errors, the page errors
+        // on anything, so a signature match on a payload is not evidence of injection.
+        if (StrictInputValidationGuard.errorsOnBenignInput(context)) {
+            return false;
+        }
+
         List<String> payloads = selectPayloads(context);
 
         for (String payload : payloads) {
+            // Probe the bare payload first (the value replaced entirely), then the payload appended
+            // to the original value: the generic rule (40018) sends the empty prefix first, so the
+            // reported attack value matches the shape that broke the page.
+            if (context.isStopped() || used >= budget) {
+                return false;
+            }
+
+            HttpMessage bareMsg = context.newMessage();
+            context.setParam(bareMsg, payload);
+            context.sendAndReceive(bareMsg);
+            used++;
+
+            if (raiseOnResponse(context, baseline, bareMsg, payload)) {
+                return true;
+            }
+
             if (context.isStopped() || used >= budget) {
                 return false;
             }
@@ -90,19 +112,29 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
             context.sendAndReceive(attackMsg);
             used++;
 
-            Optional<Dbms> dbms =
-                    DbErrorSignatures.identify(attackMsg.getResponseBody().toString());
-            if (dbms.isEmpty()) {
-                continue;
+            if (raiseOnResponse(context, baseline, attackMsg, attackValue)) {
+                return true;
             }
+        }
+        return false;
+    }
 
-            if (used >= budget) {
-                return false;
-            }
-            used++;
+    /**
+     * Checks one probe response and raises an alert if it is conclusive: either a known DB error
+     * signature (subject to the strict-input-validation guard) or a server error the baseline and
+     * control requests did not produce (a quote that reliably breaks the page). The caller has
+     * already spent the request and checked the budget, so nothing is counted here.
+     *
+     * @return true if an alert was raised
+     */
+    private boolean raiseOnResponse(
+            ScanContext context, HttpMessage baseline, HttpMessage attackMsg, String attackValue)
+            throws IOException {
+        Optional<Dbms> dbms = DbErrorSignatures.identify(attackMsg.getResponseBody().toString());
+        if (dbms.isPresent()) {
             if (StrictInputValidationGuard.detectsStrictInputValidation(
-                    context, originalValue, baseline, attackMsg, attackValue)) {
-                continue;
+                    context, context.getOriginalValue(), baseline, attackMsg, attackValue)) {
+                return false;
             }
 
             String evidence =
@@ -119,7 +151,28 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
                     .raise();
             return true;
         }
+
+        // A payload that turns a working baseline into a server error (while a safe control value
+        // does not) is itself evidence of injection: pages don't 500 on benign input.
+        if (isServerError(attackMsg)
+                && !isServerError(baseline)
+                && (context.getCachedControl() == null
+                        || !isServerError(context.getCachedControl()))) {
+            context.newAlert()
+                    .setConfidence(Alert.CONFIDENCE_LOW)
+                    .setParam(context.getParamName())
+                    .setAttack(attackValue)
+                    .setEvidence(attackMsg.getResponseHeader().getPrimeHeader().trim())
+                    .setMessage(attackMsg)
+                    .raise();
+            return true;
+        }
         return false;
+    }
+
+    private static boolean isServerError(HttpMessage msg) {
+        int status = msg.getResponseHeader().getStatusCode();
+        return status >= 500 && status < 600;
     }
 
     private List<String> selectPayloads(ScanContext context) {
@@ -135,5 +188,4 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
         }
         return ERROR_PAYLOADS_FALLBACK;
     }
-
 }

@@ -41,6 +41,7 @@ public class ResponseComparator {
      * responses are considered the same outcome. 0 means very different, 1 means very similar.
      */
     private static final float SIMILARITY_THRESHOLD = 0.98f;
+
     private static final float FUZZY_TUNED_THRESHOLD = 0.97f;
 
     /** Whether {@code a} and {@code b} represent essentially the same response. */
@@ -69,9 +70,9 @@ public class ResponseComparator {
 
     /**
      * Compares two responses for exact equality after stripping the original value and the value
-     * sent in all their encoded forms. Status codes must match; bodies are stripped of the
-     * patterns and compared with binary equality. For redirect responses (3xx), also checks that
-     * Location headers match (mirroring baseline's locationHeaderHeuristic).
+     * sent in all their encoded forms. Status codes must match; bodies are stripped of the patterns
+     * and compared with binary equality. For redirect responses (3xx), also checks that Location
+     * headers match (mirroring baseline's locationHeaderHeuristic).
      *
      * @param a the first message
      * @param aOriginalValue the original parameter value for message a
@@ -107,12 +108,17 @@ public class ResponseComparator {
         String aBody = a.getResponseBody().toString();
         String bBody = b.getResponseBody().toString();
 
+        // Byte-identical bodies are the same outcome regardless of what was sent: stripping below
+        // can manufacture a phantom difference when the response legitimately contains the value
+        // sent (e.g. a page that echoes the confirmation expression back as content).
+        if (aBody.equals(bBody)) {
+            return true;
+        }
+
         String aStripped =
-                ResponseBodyUtils.stripAllEncodedForms(
-                        aBody, aOriginalValue, aValueSent);
+                ResponseBodyUtils.stripAllEncodedForms(aBody, aOriginalValue, aValueSent);
         String bStripped =
-                ResponseBodyUtils.stripAllEncodedForms(
-                        bBody, bOriginalValue, bValueSent);
+                ResponseBodyUtils.stripAllEncodedForms(bBody, bOriginalValue, bValueSent);
 
         return aStripped.equals(bStripped);
     }

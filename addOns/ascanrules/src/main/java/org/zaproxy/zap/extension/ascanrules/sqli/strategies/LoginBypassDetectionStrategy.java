@@ -29,18 +29,17 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
 public class LoginBypassDetectionStrategy implements DetectionStrategy {
 
-    private static final List<String> LOGIN_KEYWORDS = List.of(
-            "login", "password", "username", "user", "pass", "auth");
+    private static final List<String> LOGIN_KEYWORDS =
+            List.of("login", "password", "username", "user", "pass", "auth");
 
-    private static final List<String> SUCCESS_KEYWORDS = List.of(
-            "welcome", "hello", "dashboard", "home", "authenticated", "success");
+    private static final List<String> SUCCESS_KEYWORDS =
+            List.of("welcome", "hello", "dashboard", "home", "authenticated", "success");
 
     private final ResponseComparator comparator = new ResponseComparator();
 
     @Override
     public boolean detect(ScanContext context) throws IOException {
-        String originalValue =
-                context.getOriginalValue() == null ? "" : context.getOriginalValue();
+        String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
         int budget = context.getRemainingBudget();
         if (budget < 4) {
             return false;

@@ -29,27 +29,15 @@ import static org.hamcrest.Matchers.is;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
 import org.junit.jupiter.api.Test;
-import org.zaproxy.zap.extension.ascanrules.ExtensionAscanRules;
+import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
-import org.zaproxy.zap.testutils.ActiveScannerTestUtils;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 
 /**
  * Integration test for {@link BooleanBasedDetectionStrategy}, exercised through the full {@link
  * SqlInjectionModularScanRule} orchestrator against a real (embedded) HTTP server.
  */
-class BooleanBasedDetectionStrategyUnitTest
-        extends ActiveScannerTestUtils<SqlInjectionModularScanRule> {
-
-    @Override
-    protected void setUpMessages() {
-        mockMessages(new ExtensionAscanRules());
-    }
-
-    @Override
-    protected SqlInjectionModularScanRule createScanner() {
-        return new SqlInjectionModularScanRule();
-    }
+class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRuleTest {
 
     @Test
     void shouldAlertWhenBooleanConditionControlsResponse() throws Exception {

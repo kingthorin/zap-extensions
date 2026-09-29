@@ -27,9 +27,9 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ResponseComparator;
 import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
 /**
- * Detects SQL injection by testing if numeric parameters are evaluated as expressions.
- * For example, if parameter "1" gives the same result as "3-2", the database is likely
- * evaluating the expression, suggesting SQL injection is possible.
+ * Detects SQL injection by testing if numeric parameters are evaluated as expressions. For example,
+ * if parameter "1" gives the same result as "3-2", the database is likely evaluating the
+ * expression, suggesting SQL injection is possible.
  */
 public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
 
@@ -37,8 +37,7 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
 
     @Override
     public boolean detect(ScanContext context) throws IOException {
-        String originalValue =
-                context.getOriginalValue() == null ? "" : context.getOriginalValue();
+        String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
 
         // Only test for numeric parameters
         int paramAsInt;
@@ -67,8 +66,9 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
             String addVariant1 = String.valueOf(paramPlusTwo) + "-2";
             String addVariant2 = String.valueOf(paramPlusThree) + "-2";
 
-            if (used + 2 <= budget && testExpressionVariant(context, baselineMsg, originalValue,
-                    addVariant1, addVariant2)) {
+            if (used + 2 <= budget
+                    && testExpressionVariant(
+                            context, baselineMsg, originalValue, addVariant1, addVariant2)) {
                 return true;
             }
             used += 2;
@@ -81,8 +81,8 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
                 String multVariant1 = String.valueOf(paramMultTwo) + "/2";
                 String multVariant2 = String.valueOf(paramMultFour) + "/2";
 
-                if (testExpressionVariant(context, baselineMsg, originalValue, multVariant1,
-                        multVariant2)) {
+                if (testExpressionVariant(
+                        context, baselineMsg, originalValue, multVariant1, multVariant2)) {
                     return true;
                 }
             }
@@ -93,15 +93,21 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         return false;
     }
 
-    private boolean testExpressionVariant(ScanContext context, HttpMessage baselineMsg,
-            String originalValue, String variant1, String variant2) throws IOException {
+    private boolean testExpressionVariant(
+            ScanContext context,
+            HttpMessage baselineMsg,
+            String originalValue,
+            String variant1,
+            String variant2)
+            throws IOException {
         // Test first variant
         HttpMessage msg1 = context.newMessage();
         context.setParam(msg1, variant1);
         context.sendAndReceive(msg1);
 
         boolean variant1MatchesBaseline =
-                comparator.matchesExactlyAfterStripping(baselineMsg, originalValue, originalValue, msg1, originalValue, variant1);
+                comparator.matchesExactlyAfterStripping(
+                        baselineMsg, originalValue, originalValue, msg1, originalValue, variant1);
 
         if (!variant1MatchesBaseline) {
             return false; // First variant doesn't match baseline, not a valid expression test
@@ -113,9 +119,11 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         context.sendAndReceive(msg2);
 
         boolean variant2DiffersFromBaseline =
-                !comparator.matchesExactlyAfterStripping(baselineMsg, originalValue, originalValue, msg2, originalValue, variant2);
-        boolean variant2DiffersFromVariant1 = !comparator.matchesExactlyAfterStripping(msg1, originalValue, variant1, msg2,
-                originalValue, variant2);
+                !comparator.matchesExactlyAfterStripping(
+                        baselineMsg, originalValue, originalValue, msg2, originalValue, variant2);
+        boolean variant2DiffersFromVariant1 =
+                !comparator.matchesExactlyAfterStripping(
+                        msg1, originalValue, variant1, msg2, originalValue, variant2);
 
         if (variant2DiffersFromBaseline && variant2DiffersFromVariant1) {
             // Expressions are being evaluated: baseline = variant1 but both differ from variant2
@@ -123,8 +131,14 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
                     .setConfidence(Alert.CONFIDENCE_MEDIUM)
                     .setParam(context.getParamName())
                     .setAttack(variant1)
-                    .setOtherInfo("Parameter evaluates SQL expressions: [" + originalValue
-                            + "] == [" + variant1 + "] != [" + variant2 + "]")
+                    .setOtherInfo(
+                            "Parameter evaluates SQL expressions: ["
+                                    + originalValue
+                                    + "] == ["
+                                    + variant1
+                                    + "] != ["
+                                    + variant2
+                                    + "]")
                     .setMessage(msg1)
                     .raise();
             return true;
