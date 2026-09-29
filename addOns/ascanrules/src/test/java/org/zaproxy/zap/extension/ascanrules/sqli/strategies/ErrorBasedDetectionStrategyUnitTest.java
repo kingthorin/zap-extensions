@@ -56,6 +56,29 @@ class ErrorBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
         assertThat(alertsRaised.get(0).getParam(), is(equalTo("id")));
     }
 
+    /**
+     * The AltoroJ (demo.testfire.net) login page: {@code DBUtil.isValidUser} throws Derby's parse
+     * error for a quote and {@code LoginServlet} stores {@code getLocalizedMessage()} for {@code
+     * login.jsp} to print verbatim -- a 200, not a 500. A safe suffix is just an unknown username,
+     * so it looks like the baseline. Detection here is tautology-free: the quote alone is the whole
+     * payload.
+     */
+    @Test
+    void shouldAlertOnAltoroStyleLoginPageWithDerbyErrorInBody() throws Exception {
+        // Given
+        String path = "/sqli/error/altoro-login/";
+        nano.addHandler(new AltoroLoginHandler(path, "uid"));
+        rule.init(getHttpMessage(path + "?uid=jsmith"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(alertsRaised.get(0).getParam(), is(equalTo("uid")));
+        assertThat(alertsRaised.get(0).getAttack(), is(equalTo("'")));
+    }
+
     @Test
     void shouldNotAlertWhenPageErrorsOnAnyMalformedInput() throws Exception {
         // Given: a WAVSEP-style honeypot -- it returns a SQL-error-shaped response for ANY
@@ -113,6 +136,66 @@ class ErrorBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
                         "Warning: You have an error in your SQL syntax near '" + value + "'");
             }
             return newFixedLengthResponse("Some ordinary content for " + value);
+        }
+    }
+
+    /**
+     * Mimics AltoroJ's login page: Derby's error text is printed into the body of a normal 200
+     * login page, and anything without a metacharacter (including a safe suffix) just fails login.
+     */
+    private static class AltoroLoginHandler extends NanoServerHandler {
+
+        private static final String LOGIN_FAILED =
+                "Login Failed: We&#39;re sorry, but this username or password was not found in our"
+                        + " system. Please try again.";
+
+        private static final String DERBY_ERROR =
+                "Syntax error: Encountered &quot;&lt;EOF&gt;&quot; at line 1, column 79.";
+
+        private final String param;
+
+        AltoroLoginHandler(String path, String param) {
+            super(path);
+            this.param = param;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String value = getFirstParamValue(session, param);
+            boolean metacharacter = value != null && value.contains("'");
+            return newFixedLengthResponse(loginPage(metacharacter ? DERBY_ERROR : LOGIN_FAILED));
+        }
+
+        private static String loginPage(String message) {
+            return "<!DOCTYPE html><html><head><title>Altoro Mutual</title></head><body>"
+                    + "<div id=\"header\"><h1>Altoro Mutual</h1><ul id=\"nav\">"
+                    + "<li><a href=\"index.jsp\">Home</a></li>"
+                    + "<li><a href=\"login.jsp\">Login</a></li>"
+                    + "<li><a href=\"search.jsp\">Search</a></li>"
+                    + "<li><a href=\"feedback.jsp\">Feedback</a></li></ul></div>"
+                    + "<div id=\"wrapper\" style=\"width: 99%;\">"
+                    + "<div id=\"toc\"><h2>Online Banking</h2><p>Altoro Mutual is a fictitious"
+                    + " online banking application, hosted to demonstrate application security"
+                    + " testing tools. Use the form below to sign in to your account and view your"
+                    + " balances, transfer funds and pay bills.</p></div>"
+                    + "<h1>Online Banking Login</h1>"
+                    + "<p><span id=\"_ctl0__ctl0_Content_Main_message\" style=\"color:#FF0066;"
+                    + "font-size:12pt;font-weight:bold;\">"
+                    + message
+                    + "</span></p>"
+                    + "<form action=\"doLogin\" method=\"post\" name=\"login\" id=\"login\">"
+                    + "<table><tr><td>Username:</td><td><input type=\"text\" id=\"uid\""
+                    + " name=\"uid\" value=\"\" style=\"width: 150px;\"></td></tr>"
+                    + "<tr><td>Password:</td><td><input type=\"password\" id=\"passw\""
+                    + " name=\"passw\" style=\"width: 150px;\"></td></tr>"
+                    + "<tr><td></td><td><input type=\"submit\" name=\"btnSubmit\""
+                    + " value=\"Login\"></td></tr></table></form></div>"
+                    + "<div id=\"footer\"><p>Altoro Mutual is a demonstration application and is not"
+                    + " connected to any real bank. All accounts, balances and transactions shown"
+                    + " are fictitious.</p></div>"
+                    + "<script type=\"text/javascript\">function setfocus() {"
+                    + "if (document.login.uid.value==\"\") {document.login.uid.focus();} else"
+                    + " {document.login.passw.focus();}}</script></body></html>";
         }
     }
 

@@ -96,6 +96,14 @@ public final class DbErrorSignatures {
                         "ORA-01789"),
                 List.of("query block has incorrect number of result columns", "ORA-01789")),
         DB2(Tech.Db2, "IBM DB2", List.of("com.ibm.db2.jcc", "COM.ibm.db2.jdbc"), List.of()),
+        // Derby (AltoroJ's engine, so the demo login prints these when a quote breaks the query),
+        // covers both renderings of the same parse error: "Syntax error: Encountered ..." and
+        // "ERROR 42X01: Syntax error: Encountered ..."
+        DERBY(
+                Tech.Db,
+                "Apache Derby",
+                List.of("org.apache.derby", "ERROR 42X", "Syntax error: Encountered"),
+                List.of()),
         POSTGRESQL(
                 Tech.PostgreSQL,
                 "PostgreSQL",

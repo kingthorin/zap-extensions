@@ -53,6 +53,21 @@ class DbErrorSignaturesUnitTest {
     }
 
     @Test
+    void shouldIdentifyDerbyFromAltoroLoginPageException() {
+        // Given -- AltoroJ's login.jsp prints DBUtil.isValidUser's SQLException verbatim, so a lone
+        // quote in uid or passw surfaces Derby's parse error in the page body.
+        String body =
+                "<span id=\"_ctl0__ctl0_Content_Main_message\" style=\"color:#FF0066;"
+                        + "font-size:12pt;font-weight:bold;\">Syntax error: Encountered \"<EOF>\""
+                        + " at line 1, column 79.</span>";
+        // When
+        Optional<Dbms> result = DbErrorSignatures.identify(body);
+        // Then
+        assertThat(result.isPresent(), is(true));
+        assertThat(result.get(), is(equalTo(Dbms.DERBY)));
+    }
+
+    @Test
     void shouldFallBackToGenericSignature() {
         // Given
         String body = "500 Internal Server Error: java.sql.SQLException: something broke";
