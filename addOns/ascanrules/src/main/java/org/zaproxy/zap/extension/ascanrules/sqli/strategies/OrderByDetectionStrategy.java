@@ -32,8 +32,10 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
  * both should match a properly-ordered result, but a failed injection likely produces different
  * results.
  *
- * <p>Uses a cheap 2-request cascade (baseline → ASC, then DESC only if ASC matched): typical cost
- * is 2 requests (if ASC differs from baseline, stop early) or 3 requests (full cascade).
+ * <p>Uses a cheap cascade (baseline → ASC, then DESC only if ASC matched): typical cost is 2 or 3
+ * requests. When that oracle is inconclusive and budget allows, a second oracle runs (valid vs
+ * out-of-range ORDER BY index, 2 more requests), which is what detects pages whose baseline matches
+ * zero rows. Full cost at HIGH strength is therefore 5 requests, the whole allocation.
  *
  * <p>Deliberately re-sends the original value rather than comparing against {@link
  * ScanContext#getBaseMessage()}: that message is stale for real scanning, so a live baseline is the
@@ -42,6 +44,16 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 public class OrderByDetectionStrategy implements DetectionStrategy {
 
     private final ResponseComparator comparator = new ResponseComparator();
+
+    /** A well-formed ORDER BY with a valid index: should behave like the baseline. */
+    private static final String VALID_INDEX_PAYLOAD = "' ORDER BY 1 -- ";
+
+    /**
+     * An ORDER BY with an index no result set can have. Ordering fails while the query is planned,
+     * so this differs from the baseline even when the baseline matches zero rows — unlike AND-style
+     * narrowing, which cannot distinguish anything against an empty result set.
+     */
+    private static final String OUT_OF_RANGE_INDEX_PAYLOAD = "' ORDER BY 99 -- ";
 
     @Override
     public boolean detect(ScanContext context) throws IOException {
@@ -105,6 +117,68 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
             return true;
         }
 
-        return false;
+        return detectRejectedOrderByIndex(context, baseline, originalValue);
+    }
+
+    /**
+     * Second oracle: the page accepts a valid ORDER BY index but reacts to an out-of-range one.
+     *
+     * <p>This is what recovers blind cases whose baseline returns zero rows: the ORDER BY index is
+     * checked while the query is planned, so no row has to be matched for the difference to show.
+     * It never widens or modifies the row set (unlike an OR tautology, which is deliberately not
+     * used anywhere in this rule). The valid-index probe is the control: if any ORDER BY payload
+     * already moves the response (echoed input, rejected syntax), the out-of-range response proves
+     * nothing and no alert is raised.
+     *
+     * @return true if an alert was raised
+     */
+    private boolean detectRejectedOrderByIndex(
+            ScanContext context, HttpMessage baseline, String originalValue) throws IOException {
+        if (context.isStopped() || context.getRemainingBudget() < 2) {
+            return false;
+        }
+
+        String validValue = originalValue + VALID_INDEX_PAYLOAD;
+        HttpMessage validMsg = context.newMessage();
+        context.setParam(validMsg, validValue);
+        context.sendAndReceive(validMsg);
+
+        boolean validMatchesBaseline =
+                comparator.matchesExactlyAfterStripping(
+                        baseline,
+                        originalValue,
+                        originalValue,
+                        validMsg,
+                        originalValue,
+                        validValue);
+        if (!validMatchesBaseline) {
+            return false;
+        }
+
+        String invalidValue = originalValue + OUT_OF_RANGE_INDEX_PAYLOAD;
+        HttpMessage invalidMsg = context.newMessage();
+        context.setParam(invalidMsg, invalidValue);
+        context.sendAndReceive(invalidMsg);
+
+        boolean invalidDiffersFromBaseline =
+                !comparator.matchesExactlyAfterStripping(
+                        baseline,
+                        originalValue,
+                        originalValue,
+                        invalidMsg,
+                        originalValue,
+                        invalidValue);
+        if (!invalidDiffersFromBaseline) {
+            return false;
+        }
+
+        context.newAlert()
+                .setConfidence(Alert.CONFIDENCE_MEDIUM)
+                .setParam(context.getParamName())
+                .setAttack(invalidValue)
+                .setEvidence("ORDER BY index rejected while a valid index is accepted")
+                .setMessage(invalidMsg)
+                .raise();
+        return true;
     }
 }
