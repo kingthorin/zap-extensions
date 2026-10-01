@@ -127,6 +127,10 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
 
     @Override
     public void init() {
+        initBudgets();
+    }
+
+    private void initBudgets() {
         int strengthIndex =
                 switch (getAttackStrength()) {
                     case LOW -> 0;
@@ -209,6 +213,12 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
                     param,
                     e.getMessage());
         }
+
+        // 40018 reinitialises its per-technique counts for every parameter (SqlInjectionScanRule
+        // scan(), "reinitialise the count for each type of request, for each parameter"), so a
+        // multi-parameter request (page + username + password) starts each parameter with a full
+        // budget rather than spending earlier parameters' requests from later ones' allowance.
+        initBudgets();
 
         String[] techniqueNames = {
             "ERROR", "BOOLEAN", "EXPRESSION", "ORDERBY", "UNION", "LOGINBYPASS"
