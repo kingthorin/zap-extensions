@@ -77,7 +77,7 @@ public class ComparableResponse {
 
     // SQL injection specific keywords for error-based and expression-based detection
     private static final List<String> SQL_ERROR_KEYWORDS =
-            Arrays.asList(
+            List.of(
                     "sql",
                     "database",
                     "query",
@@ -596,8 +596,8 @@ public class ComparableResponse {
     /**
      * Calculates an adaptive similarity threshold based on measured response variance. Stable
      * responses (low variance) get stricter thresholds; variable responses get looser thresholds.
-     * This enables fuzzy matching to work well on both deterministic test pages (WAVSEP) and
-     * real apps with dynamic content (timestamps, sessions, etc).
+     * This enables fuzzy matching to work well on both deterministic test pages (WAVSEP) and real
+     * apps with dynamic content (timestamps, sessions, etc).
      *
      * @param variance normalized variance score (0=stable, 1=highly variable)
      * @return adaptive threshold in range [0.88, 0.98]
@@ -647,22 +647,24 @@ public class ComparableResponse {
      * @param response2 second response
      * @return 1.0 if both have SQL errors or both don't, 0.0 if mismatch
      */
-    public static float sqlErrorHeuristic(ComparableResponse response1, ComparableResponse response2) {
+    public static float sqlErrorHeuristic(
+            ComparableResponse response1, ComparableResponse response2) {
         boolean r1HasSqlError = hasSqlErrorKeywords(response1.body.toLowerCase());
         boolean r2HasSqlError = hasSqlErrorKeywords(response2.body.toLowerCase());
         return (r1HasSqlError == r2HasSqlError) ? 1.0f : 0.0f;
     }
 
     /**
-     * SQL-injection-specific heuristic: compares result set size as proxy for query success.
-     * Counts table rows, list items, etc. For boolean-blind SQLi, size differences indicate
-     * injection success. Returns similarity ratio (0-1).
+     * SQL-injection-specific heuristic: compares result set size as proxy for query success. Counts
+     * table rows, list items, etc. For boolean-blind SQLi, size differences indicate injection
+     * success. Returns similarity ratio (0-1).
      *
      * @param response1 first response
      * @param response2 second response
      * @return size similarity ratio: 1.0 if equal, 0.0 if completely different
      */
-    public static float resultSetSizeHeuristic(ComparableResponse response1, ComparableResponse response2) {
+    public static float resultSetSizeHeuristic(
+            ComparableResponse response1, ComparableResponse response2) {
         int rows1 = countTableRows(response1.body);
         int rows2 = countTableRows(response2.body);
 
@@ -715,9 +717,9 @@ public class ComparableResponse {
     }
 
     /**
-     * Measures response variance (stability) from multiple baseline responses.
-     * Calculates pairwise similarity and returns standard deviation.
-     * 0.0 = highly stable (deterministic), 1.0 = highly variable (noisy)
+     * Measures response variance (stability) from multiple baseline responses. Calculates pairwise
+     * similarity and returns standard deviation. 0.0 = highly stable (deterministic), 1.0 = highly
+     * variable (noisy)
      *
      * @param baselineResponses List of responses from identical requests (at least 2)
      * @return variance score [0.0, 1.0]
@@ -761,9 +763,8 @@ public class ComparableResponse {
     }
 
     /**
-     * Compares two responses with adaptive threshold based on measured baseline variance.
-     * Higher variance → lower threshold (more permissive).
-     * Lower variance → higher threshold (stricter).
+     * Compares two responses with adaptive threshold based on measured baseline variance. Higher
+     * variance → lower threshold (more permissive). Lower variance → higher threshold (stricter).
      *
      * @param baseline The baseline/reference response (measured once)
      * @param test The response to compare
@@ -786,5 +787,4 @@ public class ComparableResponse {
         float similarity = baseline.compareWith(test);
         return similarity >= adaptiveThreshold;
     }
-
 }

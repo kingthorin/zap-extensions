@@ -19,8 +19,8 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 
 /**
@@ -86,9 +86,7 @@ public class BooleanConditionPayloads {
      */
     public static List<Condition> conditionsFor(AttackStrength strength) {
         if (strength == AttackStrength.HIGH || strength == AttackStrength.INSANE) {
-            List<Condition> all = new ArrayList<>(CONDITIONS);
-            all.addAll(LIKE_CONDITIONS);
-            return all;
+            return Stream.concat(CONDITIONS.stream(), LIKE_CONDITIONS.stream()).toList();
         }
         return CONDITIONS;
     }
