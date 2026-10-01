@@ -174,6 +174,23 @@ public abstract class ActiveScannerTestUtils<T extends AbstractPlugin> extends T
                                 httpMessagesSent.add(msg);
                                 countMessagesSent++;
                             }
+
+                            /**
+                             * The scanner these tests run the rule under has no {@code Target}, so
+                             * its own scope check fails; override it with what a target without
+                             * context or excluded URLs would answer, i.e. everything is in scope.
+                             * Without this, the moment a rule receives a redirection -- which the
+                             * sender follows, asking the {@link HostProcess} whether the target is
+                             * in scope -- the scan dies with a {@link NullPointerException} instead
+                             * of the rule getting the redirected response.
+                             *
+                             * @param nodeName the URL being checked
+                             * @return always {@code true}
+                             */
+                            @Override
+                            protected boolean nodeInScope(String nodeName) {
+                                return true;
+                            }
                         });
 
         rule = createScanner();
