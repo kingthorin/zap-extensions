@@ -28,6 +28,7 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.zaproxy.zap.testutils.RequestCondition.formParam;
 import static org.zaproxy.zap.testutils.RequestCondition.param;
 
 import com.strobel.functions.Supplier;
@@ -35,9 +36,9 @@ import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
 import fi.iki.elonen.NanoHTTPD.Response.Status;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -152,7 +153,11 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
                     "COM.cloudscape",
                     "RmiJdbc.RJDriver",
                     "com.ingres.jdbc",
-                    "near \".+\": syntax error",
+                    // Deliberately not listed: the pattern "near \".+\": syntax error"
+                    // that 40018 carries for SQLite. It is a regex rather than a message a
+                    // database sends, and it only ever matched because 40018 compiles its list
+                    // as patterns. A real SQLite error (e.g. near "'%'": syntax error) is
+                    // covered by SQLITE_ERROR, which the Juice Shop scenario exercises.
                     "SQLITE_ERROR",
                     "SELECTs to the left and right of UNION do not have the same number of result columns");
 
@@ -165,6 +170,13 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
                     "ODBC driver does not support",
                     "System.Data.OleDb",
                     "java.sql.SQLException");
+
+    /**
+     * Matches the OR of a tautology payload (e.g. {@code admin' OR '1'='1' -- }), but not the OR
+     * inside {@code ORDER BY}, which a plain "contains or" would match as well.
+     */
+    private static final Pattern SQL_OR_OPERATOR =
+            Pattern.compile("\\bor\\b", Pattern.CASE_INSENSITIVE);
 
     @Override
     protected int getRecommendMaxNumberMessagesPerParam(AttackStrength strength) {
@@ -322,12 +334,18 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
                 .forEach(
                         db ->
                                 db.getErrorPatterns().stream()
+                                        .map(SqlInjectionScanRuleTestBase::getRawString)
+                                        // 40018 also lists "near \".+\": syntax error" for SQLite.
+                                        // That is a regex, not a message a database sends, and it
+                                        // only ever matched because 40018 compiles its list as
+                                        // patterns, so it is not fed to the rules as response
+                                        // content here (see DbErrorSignatures).
+                                        .filter(error -> !"near \".+\": syntax error".equals(error))
                                         .forEach(
                                                 e ->
                                                         assertThat(
                                                                 ALL_EXCEPT_GENERIC_SQL_ERRORS,
-                                                                Matchers.hasItem(
-                                                                        getRawString(e)))));
+                                                                Matchers.hasItem(e))));
     }
 
     private static void assertNoParams(Alert alert) {
@@ -945,9 +963,9 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
         }
 
         static List<String> allSqlErrors() {
-            ArrayList<String> list = new ArrayList<>(ALL_EXCEPT_GENERIC_SQL_ERRORS);
-            list.addAll(GENERIC_SQL_ERRORS);
-            return list;
+            return Stream.concat(
+                            ALL_EXCEPT_GENERIC_SQL_ERRORS.stream(), GENERIC_SQL_ERRORS.stream())
+                    .toList();
         }
 
         @ParameterizedTest
@@ -1339,6 +1357,308 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
             assertThat(httpMessagesSent, hasSize(greaterThan(1)));
             assertThat(alertsRaised, hasSize(0));
         }
+    }
+
+    /**
+     * Scenarios modelled on OWASP Juice Shop (Express + Sequelize + SQLite): {@code
+     * routes/search.ts} concatenates the {@code q} value into two {@code LIKE} clauses and {@code
+     * routes/login.ts} concatenates the {@code email} value into the {@code Users} lookup, both
+     * mounted under {@code /rest}. The image runs the {@code errorhandler} middleware in
+     * development mode, which is why the SQLite message is part of the response body, and {@code
+     * server.ts} enables {@code bodyParser.urlencoded}, so a form-encoded POST reaches the same
+     * query as the JSON body the Angular front-end sends.
+     */
+    @Nested
+    class JuiceShopSqlInjection {
+
+        private static final String SEARCH_PATH = "/rest/products/search";
+        private static final String LOGIN_PATH = "/rest/user/login";
+
+        private static final String PRODUCTS_JSON =
+                "[{\"id\":1,\"name\":\"Apple Juice (1000ml)\",\"description\":\"The all-time"
+                        + " classic.\",\"price\":1.99,\"deluxePrice\":0.99}]";
+
+        /**
+         * What Sequelize surfaces for a quote in {@code q}: the value is spliced into both {@code
+         * LIKE} patterns, so the quote ends the second one early and sqlite3 rejects the statement.
+         */
+        private static final String SQLITE_ERROR_BODY =
+                "<!DOCTYPE html><html><head><title>Error</title></head><body>"
+                        + "<h1>500 Internal Server Error</h1><h2>SequelizeDatabaseError:"
+                        + " SQLITE_ERROR: near &quot;&#39;%&#39;&quot;: syntax error</h2>"
+                        + "<p>SELECT * FROM Products WHERE ((name LIKE &#39;%apple&#39;%&#39; OR"
+                        + " description LIKE &#39;%apple&#39;%&#39;) AND deletedAt IS NULL) ORDER BY"
+                        + " name</p></body></html>";
+
+        /** {@code res.status(401).send(res.__('Invalid email or password.'))}. */
+        private static final String LOGIN_FAILED_BODY = "Invalid email or password.";
+
+        /** {@code res.json({ authentication: { token, bid, umail } })}. */
+        private static final String LOGIN_SUCCESS_BODY =
+                "{\"authentication\":{\"token\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.sig\","
+                        + "\"bid\":1,\"umail\":\"admin@juice-sh.op\"}}";
+
+        @Test
+        void shouldAlertSqliteErrorOnProductSearch() throws Exception {
+            // Given: a quote in -q- leaves the second LIKE clause open, so the query fails.
+            nano.addHandler(
+                    UrlParamValueHandler.builder()
+                            .targetPath(SEARCH_PATH)
+                            .targetParam("q")
+                            .errorOracle(500, SQLITE_ERROR_BODY)
+                            .fallbackHtmlResponse(PRODUCTS_JSON)
+                            .build());
+            rule.init(getHttpMessage(SEARCH_PATH + "?q=apple"), parent);
+
+            // When
+            rule.scan();
+
+            // Then
+            assertThat(alertsRaised, hasSize(1));
+            assertThat(alertsRaised.get(0).getParam(), is(equalTo("q")));
+        }
+
+        @Test
+        void shouldAlertLoginBypassOnAdminLogin() throws Exception {
+            // Given: only the email is spliced in as-is (the password is hashed first), so a
+            // tautology in the email logs the first user in -- by returning a session rather than
+            // the "Invalid email or password." message.
+            nano.addHandler(
+                    UrlParamValueHandler.builder()
+                            .targetPath(LOGIN_PATH)
+                            .targetParam("email")
+                            .when(
+                                    formParam("email")
+                                            .matches(
+                                                    value ->
+                                                            value.contains("'")
+                                                                    && SQL_OR_OPERATOR
+                                                                            .matcher(value)
+                                                                            .find()))
+                            .thenReturnJson(LOGIN_SUCCESS_BODY)
+                            .when(formParam("email"))
+                            .thenReturn(401, LOGIN_FAILED_BODY)
+                            .build());
+            rule.init(
+                    formPost(
+                            LOGIN_PATH,
+                            LOGIN_FAILED_BODY,
+                            "email=admin%40juice-sh.op&password=admin123"),
+                    parent);
+
+            // When
+            rule.scan();
+
+            // Then
+            assertThat(alertsRaised, hasSize(greaterThan(0)));
+            assertThat(alertsRaised.get(0).getParam(), is(equalTo("email")));
+        }
+    }
+
+    /**
+     * Scenarios modelled on OWASP Mutillidae II (PHP + MySQL): {@code SQLQueryHandler} concatenates
+     * the request values into the query and {@code MySQLHandler} throws on {@code mysqli_error},
+     * which {@code CustomErrorHandler::FormatError} then prints into the page together with the
+     * query -- so the quote alone leaks the error, with no tautology involved. {@code
+     * includes/process-login-attempt.php} answers a successful login with a 302 to the home page.
+     */
+    @Nested
+    class MutillidaeSqlInjection {
+
+        private static final String INDEX_PATH = "/index.php";
+        private static final String USER_INFO_QUERY =
+                "?page=user-info.php&username=admin&password=adminPass";
+
+        private static final String NO_RECORDS_BODY =
+                "<div id=\"id-query-results\"><p>Results for the account information selected. 0"
+                        + " records found.</p></div>";
+
+        /** What the same page shows for an account that does exist, i.e. the original value. */
+        private static final String ACCOUNT_BODY =
+                "<div id=\"id-query-results\"><p>Results for the account information selected. 1"
+                        + " record found.</p><table id=\"id-accounts\"><tr><td>admin</td>"
+                        + "<td>adminPass</td><td>Administrator</td></tr></table></div>";
+
+        /** The page {@code login.php} renders again when the credentials are rejected. */
+        private static final String LOGIN_FAILED_BODY =
+                "<form action=\"index.php?page=login.php\" method=\"post\">"
+                        + "<p>Username or password incorrect</p>"
+                        + "<input type=\"text\" name=\"username\">"
+                        + "<input type=\"password\" name=\"password\">"
+                        + "<a href=\"index.php?page=register.php\">Register</a></form>";
+
+        /**
+         * The header menu ({@code includes/header.php}) once the session is logged in: the
+         * "Login/Register" link of the login page has become a "Logout" one.
+         */
+        private static final String LOGGED_IN_BODY =
+                "<table class=\"header-menu-table\"><tr>"
+                        + "<td><a href=\"index.php?page=home.php"
+                        + "&popUpNotificationCode=HPH0\">Home</a></td>"
+                        + "<td>|</td><td><a href=\"index.php?do=logout\">Logout</a></td>"
+                        + "</tr></table>";
+
+        private static String queryWith(String username, String password) {
+            return "SELECT * FROM accounts WHERE username=&#39;"
+                    + username
+                    + "&#39; AND password=&#39;"
+                    + password
+                    + "&#39;";
+        }
+
+        private static String errorBody(String query, String error) {
+            return "<div class=\"error-message\"><p>Error executing query: "
+                    + query
+                    + "</p><p>Error: "
+                    + error
+                    + "</p></div>";
+        }
+
+        @Test
+        void shouldAlertMysqlErrorOnUserInfoLookup() throws Exception {
+            // Given: neither credential is escaped before it reaches the WHERE clause, so a quote
+            // in either one breaks the query and MySQL's message ends up in the page.
+            String error =
+                    "You have an error in your SQL syntax; check the manual that corresponds to"
+                            + " your MySQL server version for the right syntax to use near"
+                            + " &#39;&#39;admin&#39;&#39; at line 1";
+            nano.addHandler(
+                    UrlParamValueHandler.builder()
+                            .targetPath(INDEX_PATH)
+                            .targetParam("username")
+                            .when(param("username").is("admin"))
+                            .thenReturn(200, ACCOUNT_BODY)
+                            .when(param("username").matches(value -> value.contains("'")))
+                            .thenReturn(200, errorBody(queryWith("admin'", "adminPass"), error))
+                            .when(param("password").matches(value -> value.contains("'")))
+                            .thenReturn(200, errorBody(queryWith("admin", "adminPass'"), error))
+                            .fallbackHtmlResponse(NO_RECORDS_BODY)
+                            .build());
+            rule.init(getHttpMessage(INDEX_PATH + USER_INFO_QUERY), parent);
+
+            // When
+            rule.scan();
+
+            // Then
+            assertThat(alertsRaised, hasSize(greaterThan(0)));
+            assertThat(
+                    alertsRaised.stream().map(Alert::getParam).toList(),
+                    Matchers.hasItem("username"));
+        }
+
+        @Test
+        void shouldAlertMysqlUnionColumnCountOnUserInfoLookup() throws Exception {
+            // Given: the UNION variant of the same concatenation -- MySQL rejects it because the
+            // SELECT the payload injects has a different number of columns.
+            nano.addHandler(
+                    UrlParamValueHandler.builder()
+                            .targetPath(INDEX_PATH)
+                            .targetParam("username")
+                            .when(param("username").is("admin"))
+                            .thenReturn(200, ACCOUNT_BODY)
+                            .when(
+                                    param("username")
+                                            .matches(
+                                                    value ->
+                                                            value.toLowerCase(Locale.ROOT)
+                                                                    .contains("union")))
+                            .thenReturn(
+                                    200,
+                                    errorBody(
+                                            queryWith("admin' UNION SELECT 1 -- ", "adminPass"),
+                                            "The used SELECT statements have a different number"
+                                                    + " of columns"))
+                            .fallbackHtmlResponse(NO_RECORDS_BODY)
+                            .build());
+            rule.init(getHttpMessage(INDEX_PATH + USER_INFO_QUERY), parent);
+
+            // When
+            rule.scan();
+
+            // Then
+            assertThat(alertsRaised, hasSize(greaterThan(0)));
+            assertThat(
+                    alertsRaised.stream().map(Alert::getParam).toList(),
+                    Matchers.hasItem("username"));
+        }
+
+        @Test
+        void shouldAlertWhenSuccessfulLoginRedirects() throws Exception {
+            // Given: the login attempt under test gets the wrong password -- all a scanner has
+            // unless it was handed real credentials -- so only a tautology in the username gets
+            // in, and a successful login is a 302 to index.php?popUpNotificationCode=AU1. The scan
+            // follows that redirect, so what the rule gets to judge on is the landing page, whose
+            // menu offers a logged-in user "Logout" where the login form offered to log in.
+            nano.addHandler(
+                    UrlParamValueHandler.builder()
+                            .targetPath(INDEX_PATH)
+                            .targetParam("username")
+                            .when(param("page").is("home.php"))
+                            .thenReturn(200, LOGGED_IN_BODY)
+                            .when(
+                                    formParam("username")
+                                            .matches(
+                                                    value ->
+                                                            value.contains("'")
+                                                                    && SQL_OR_OPERATOR
+                                                                            .matcher(value)
+                                                                            .find()))
+                            .withStatus(302)
+                            .withHeader(
+                                    HttpHeader.LOCATION,
+                                    "/index.php?popUpNotificationCode=AU1&page=home.php")
+                            .thenReturn("")
+                            .fallbackHtmlResponse(LOGIN_FAILED_BODY)
+                            .build());
+            rule.init(
+                    formPost(
+                            INDEX_PATH + "?page=login.php",
+                            LOGIN_FAILED_BODY,
+                            "username=admin&password=wrongPassword"),
+                    parent);
+
+            // When
+            rule.scan();
+
+            // Then
+            assertThat(alertsRaised, hasSize(greaterThan(0)));
+            assertThat(
+                    alertsRaised.stream().map(Alert::getParam).toList(),
+                    Matchers.hasItem("username"));
+        }
+
+        @Test
+        void shouldNotAlertWhenCredentialsAreEscaped() throws Exception {
+            // Given: the same page with the values escaped before they are concatenated, so every
+            // request gets the very same "0 records found" page -- no error, no difference.
+            nano.addHandler(
+                    UrlParamValueHandler.builder()
+                            .targetPath(INDEX_PATH)
+                            .targetParam("username")
+                            .fallbackHtmlResponse(NO_RECORDS_BODY)
+                            .build());
+            rule.init(getHttpMessage(INDEX_PATH + USER_INFO_QUERY), parent);
+
+            // When
+            rule.scan();
+
+            // Then
+            assertThat(alertsRaised, hasSize(0));
+        }
+    }
+
+    /**
+     * Creates a POST request with an {@code application/x-www-form-urlencoded} body, as the login
+     * forms of the applications the scenarios above are modelled on send it, together with the
+     * response that request gets ({@code responseBody}) -- which is what a scan starting from a
+     * captured login request has as its baseline.
+     */
+    private HttpMessage formPost(String path, String responseBody, String body) throws Exception {
+        HttpMessage message = getHttpMessage("POST", path, responseBody);
+        message.getRequestHeader()
+                .setHeader(HttpHeader.CONTENT_TYPE, HttpHeader.FORM_URLENCODED_CONTENT_TYPE);
+        message.setRequestBody(body);
+        return message;
     }
 
     private static class ExpressionBasedHandler extends NanoServerHandler {

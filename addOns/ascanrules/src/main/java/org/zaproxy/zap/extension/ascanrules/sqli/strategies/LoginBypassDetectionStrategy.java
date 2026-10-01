@@ -24,7 +24,6 @@ import java.util.List;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.extension.ascanrules.sqli.DetectionStrategy;
-import org.zaproxy.zap.extension.ascanrules.sqli.ResponseComparator;
 import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
 public class LoginBypassDetectionStrategy implements DetectionStrategy {
@@ -32,18 +31,40 @@ public class LoginBypassDetectionStrategy implements DetectionStrategy {
     private static final List<String> LOGIN_KEYWORDS =
             List.of("login", "password", "username", "user", "pass", "auth");
 
+    /**
+     * Markers of a logged-in response. A marker is only treated as evidence when it is absent from
+     * the baseline, so its presence on the login page itself (which is where "home" and
+     * "authenticated" usually appear) can never be the reason for an alert.
+     *
+     * <p>Which marker an application uses is what a scanner cannot know up front -- sqlmap has to
+     * be told with {@code --string} or {@code --code} -- so a JSON API's session counts here the
+     * same way a page saying "welcome" does.
+     */
     private static final List<String> SUCCESS_KEYWORDS =
-            List.of("welcome", "hello", "dashboard", "home", "authenticated", "success");
-
-    private final ResponseComparator comparator = new ResponseComparator();
+            List.of(
+                    "welcome",
+                    "hello",
+                    "dashboard",
+                    "home",
+                    "authenticated",
+                    "success",
+                    // The menu a logged-in page offers where the login page offers to log in
+                    // (Mutillidae II's includes/header.php swaps "Login/Register" for "Logout").
+                    "logout",
+                    // A JSON login API (e.g. Juice Shop's /rest/user/login) answers with a session
+                    // instead of a greeting: {"authentication":{"token":"...","bid":1}}.
+                    "authentication",
+                    "token",
+                    "jwt");
 
     @Override
     public boolean detect(ScanContext context) throws IOException {
-        String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
-        int budget = context.getRemainingBudget();
-        if (budget < 4) {
+        // Gated on budget: LOW strength reserves no requests for this technique (matching
+        // baseline rule 40018, which skips it below MEDIUM), so check before sending anything.
+        if (context.getRemainingBudget() < 2) {
             return false;
         }
+        String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
 
         // Baseline
         HttpMessage baseline = context.newMessage();
@@ -56,14 +77,11 @@ public class LoginBypassDetectionStrategy implements DetectionStrategy {
             return false;
         }
 
-        int used = 1;
-
         // Try simple boolean bypass: ' OR '1'='1
         String bypassPayload = originalValue + "' OR '1'='1' -- ";
         HttpMessage bypassMsg = context.newMessage();
         context.setParam(bypassMsg, bypassPayload);
         context.sendAndReceive(bypassMsg);
-        used++;
 
         String bypassBody = bypassMsg.getResponseBody().toString().toLowerCase();
 
