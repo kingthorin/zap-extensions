@@ -20,12 +20,18 @@
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.zaproxy.zap.extension.ascanrules.sqli.DbErrorSignatures.Dbms;
+import org.zaproxy.zap.model.Tech;
+import org.zaproxy.zap.model.TechSet;
 
 /** Pure-logic unit test for {@link DbErrorSignatures} -- no HTTP server needed. */
 class DbErrorSignaturesUnitTest {
@@ -103,5 +109,25 @@ class DbErrorSignaturesUnitTest {
         // Then
         assertThat(result.isPresent(), is(true));
         assertThat(result.get(), is(equalTo(Dbms.MYSQL)));
+    }
+
+    @Test
+    void shouldScopeEnginesToTechWithGenericAlwaysIncluded() {
+        // Given
+        TechSet mySqlOnly = new TechSet(Tech.MySQL);
+        // When
+        List<Dbms> result = DbErrorSignatures.inTechScope(mySqlOnly);
+        // Then
+        assertThat(result, hasItem(Dbms.MYSQL));
+        assertThat(result, hasItem(Dbms.GENERIC));
+        assertThat(result, not(hasItem(Dbms.ORACLE)));
+    }
+
+    @Test
+    void shouldReturnEveryEngineWhenScopeIsNull() {
+        // When
+        List<Dbms> result = DbErrorSignatures.inTechScope(null);
+        // Then
+        assertThat(result, containsInAnyOrder(Dbms.values()));
     }
 }

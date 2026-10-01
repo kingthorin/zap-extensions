@@ -19,10 +19,10 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.zaproxy.zap.model.Tech;
 import org.zaproxy.zap.model.TechSet;
 
@@ -152,10 +152,14 @@ public final class DbErrorSignatures {
                 Tech.SQLite,
                 "SQLite",
                 List.of(
-                        // 40018 also has a regex signature here ("near \".+\": syntax error"); this
-                        // table matches literals only, yet the shared test base feeds this exact
-                        // string as a DB error, so it is kept verbatim for 40018 parity.
-                        "near \".+\": syntax error",
+                        // 40018 has one more signature here, the pattern "near \".+\": syntax
+                        // error". It is commented out rather than copied because literal() wraps
+                        // every fragment in Pattern.quote, and a quoted literal can never match a
+                        // real SQLite message such as near "'": syntax error -- those are already
+                        // covered by SQLITE_ERROR. Reinstate it as an unquoted pattern (and add a
+                        // matching entry to the shared test base) if this class ever needs to
+                        // recognise SQLite errors SQLITE_ERROR does not cover.
+                        // "near \".+\": syntax error",
                         "SQLITE_ERROR",
                         "SELECTs to the left and right of UNION do not have the same number of"
                                 + " result columns"),
@@ -261,13 +265,9 @@ public final class DbErrorSignatures {
         if (scope == null) {
             return List.of(Dbms.values());
         }
-        List<Dbms> result = new ArrayList<>();
-        for (Dbms dbms : Dbms.values()) {
-            if (dbms.getTech().map(scope::includes).orElse(true)) {
-                result.add(dbms);
-            }
-        }
-        return result;
+        return Stream.of(Dbms.values())
+                .filter(dbms -> dbms.getTech().map(scope::includes).orElse(true))
+                .toList();
     }
 
     /**
