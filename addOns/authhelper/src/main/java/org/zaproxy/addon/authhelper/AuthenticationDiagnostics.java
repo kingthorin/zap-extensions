@@ -198,7 +198,7 @@ return getSelector(arguments[0], document)
     private DiagnosticStep currentStep;
     private ScriptKey elementSelectorScriptKey;
     private boolean interrupted;
-    private CommitMode closedWith;
+    private boolean closed;
 
     public AuthenticationDiagnostics(
             boolean enabled, String authenticationMethod, String context, String user) {
@@ -576,20 +576,11 @@ return getSelector(arguments[0], document)
 
     @Override
     public void close() {
-        close(CommitMode.COMMIT);
-    }
-
-    public void close(CommitMode mode) {
-        if (closedWith != null) {
-            if (closedWith != mode) {
-                LOGGER.warn(
-                        "Diagnostics already closed with {}, ignoring close({}).",
-                        closedWith,
-                        mode);
-            }
+        if (closed) {
+            LOGGER.warn("Diagnostics already closed, ignoring close().");
             return;
         }
-        closedWith = mode;
+        closed = true;
 
         HttpSender.removeListener(messageAccessedListener);
 
@@ -598,10 +589,6 @@ return getSelector(arguments[0], document)
         }
 
         HttpSender.removeListener(listener);
-
-        if (mode != CommitMode.COMMIT) {
-            return;
-        }
 
         diagnosticDataProviders.forEach(
                 provider -> {
@@ -622,11 +609,6 @@ return getSelector(arguments[0], document)
         if (DiagnosticPersister.persist(diagnostic, interrupted)) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    public enum CommitMode {
-        COMMIT,
-        DISCARD
     }
 
     private class ZestClientScreenshotDiag extends ZestClientScreenshot {

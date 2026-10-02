@@ -25,6 +25,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import javax.jdo.PersistenceManager;
@@ -39,7 +40,6 @@ import org.parosproxy.paros.model.Model;
 import org.parosproxy.paros.model.Session;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.addon.authhelper.AuthDiagnosticsPolicy.Mode;
-import org.zaproxy.addon.authhelper.AuthenticationDiagnostics.CommitMode;
 import org.zaproxy.addon.authhelper.internal.db.Diagnostic;
 import org.zaproxy.addon.authhelper.internal.db.TableJdo;
 import org.zaproxy.zap.model.Context;
@@ -80,41 +80,25 @@ class AuthenticationDiagnosticsUnitTest extends TestUtils {
     }
 
     @Test
-    void shouldPersistOnExplicitCommit() {
+    void shouldPersistOnClose() {
         // Given / When
-        try (AuthenticationDiagnostics diags =
-                new AuthenticationDiagnostics(true, "method", CONTEXT_NAME, "user")) {
-            // Note: diags.close() defaults to COMMIT.
-            diags.close(CommitMode.COMMIT);
-        }
+        new AuthenticationDiagnostics(true, "method", CONTEXT_NAME, "user").close();
         // Then
         verify(pm).makePersistent(any(Diagnostic.class));
         verify(tx).commit();
     }
 
     @Test
-    void shouldNotPersistOnDiscard() {
-        // Given / When
-        try (AuthenticationDiagnostics diags =
-                new AuthenticationDiagnostics(true, "method", CONTEXT_NAME, "user")) {
-            diags.close(CommitMode.DISCARD);
-        }
-        // Then
-        verify(pm, never()).makePersistent(any());
-        verify(tx, never()).commit();
-    }
-
-    @Test
-    void shouldNotPersistOnSubsequentCloseAfterDiscard() {
+    void shouldNotPersistOnSubsequentClose() {
         // Given
         AuthenticationDiagnostics diags =
                 new AuthenticationDiagnostics(true, "method", CONTEXT_NAME, "user");
-        diags.close(CommitMode.DISCARD);
+        diags.close();
         // When
         diags.close();
         // Then
-        verify(pm, never()).makePersistent(any());
-        verify(tx, never()).commit();
+        verify(pm, times(1)).makePersistent(any());
+        verify(tx, times(1)).commit();
     }
 
     @Test
