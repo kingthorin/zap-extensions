@@ -106,8 +106,11 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
                             originalValue,
                             falseValue);
 
-            if (falseDiffersFromBaseline) {
+            if (falseDiffersFromBaseline
+                    && !comparator.isDifferenceExplainedByErrorStatus(baseline, falseMsg)) {
                 // AND_TRUE~baseline AND AND_FALSE!=baseline: injectable. Alert.
+                // An error page for AND_FALSE alone -- rate limited, blocked by a WAF, timed out --
+                // is not a difference in results, so it does not alert.
                 context.newAlert()
                         .setConfidence(Alert.CONFIDENCE_MEDIUM)
                         .setParam(context.getParamName())

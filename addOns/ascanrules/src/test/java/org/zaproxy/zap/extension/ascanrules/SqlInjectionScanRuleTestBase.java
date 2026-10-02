@@ -1709,22 +1709,26 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
         @Override
         protected Response serve(IHTTPSession session) {
             String value = getFirstParamValue(session, param);
-            if (isValidValue(value)) {
-                return newFixedLengthResponse(
-                        Response.Status.OK, NanoHTTPD.MIME_HTML, getContent(value));
-            }
             return newFixedLengthResponse(
-                    Response.Status.NOT_FOUND, NanoHTTPD.MIME_HTML, "404 Not Found");
+                    Response.Status.OK, NanoHTTPD.MIME_HTML, getContent(value));
         }
 
-        private boolean isValidValue(String value) {
-            if (confirmationFails && expression.confirmationExpression.equals(value)) {
-                return true;
-            }
-            return expression.value.equals(value) || expression.baseExpression.equals(value);
-        }
-
+        /**
+         * A page that evaluates the expressions answers with the content of the evaluated value, so
+         * the original value and the equivalent expression match while the confirming expression
+         * resolves to a different value and answers different content. With {@code
+         * confirmationFails} the confirming expression resolves to the same value as the original,
+         * so nothing differs.
+         *
+         * <p>The difference is content rather than status code on purpose: a confirming expression
+         * that differs from the original only by being answered with an error page is what
+         * zaproxy/zaproxy#8651, #8653, #8652 and #9289 are about, and the rule no longer alerts on
+         * that (see {@code ResponseComparator#isDifferenceExplainedByErrorStatus}).
+         */
         protected String getContent(String value) {
+            if (!confirmationFails && expression.confirmationExpression.equals(value)) {
+                return "Some Other Content " + contentAddition;
+            }
             return "Some Content " + contentAddition;
         }
     }

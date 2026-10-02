@@ -25,6 +25,7 @@ import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.zaproxy.zap.testutils.RequestCondition.param;
 
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
 import org.zaproxy.zap.testutils.NanoServerHandler;
+import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
 /**
  * Integration test for {@link BooleanBasedDetectionStrategy}, exercised through the full {@link
@@ -76,6 +78,63 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
     }
 
     /**
+     * The false condition of a boolean pair is answered with {@code 429 Too Many Requests} while
+     * the original value and the true condition are answered normally. The reported rate limiter is
+     * the only thing that differs, so there is nothing to detect -- this alerts otherwise (reported
+     * as zaproxy/zaproxy#8652).
+     */
+    @Test
+    void shouldNotAlertWhenFalseConditionIsRateLimited() throws Exception {
+        assertNoAlertWhenFalseConditionGetsErrorPage(429, "too many requests");
+    }
+
+    /**
+     * As {@link #shouldNotAlertWhenFalseConditionIsRateLimited()}, but the false condition is
+     * rejected with {@code 403 Forbidden} by a WAF rather than rate limited: static assets served
+     * with a cache-buster parameter, where any payload that looks like SQL is blocked (reported as
+     * zaproxy/zaproxy#8653).
+     */
+    @Test
+    void shouldNotAlertWhenFalseConditionIsRejectedWithForbidden() throws Exception {
+        assertNoAlertWhenFalseConditionGetsErrorPage(403, "blocked by WAF");
+    }
+
+    /**
+     * As {@link #shouldNotAlertWhenFalseConditionIsRateLimited()}, but the false condition is
+     * answered with {@code 500 Internal Server Error}, e.g. a slow handler that times out on a
+     * payload resembling a PHP injection or an expensive wildcard search (reported as
+     * zaproxy/zaproxy#8525).
+     */
+    @Test
+    void shouldNotAlertWhenFalseConditionGetsInternalServerError() throws Exception {
+        assertNoAlertWhenFalseConditionGetsErrorPage(500, "Internal Server Error");
+    }
+
+    private void assertNoAlertWhenFalseConditionGetsErrorPage(int statusCode, String body)
+            throws Exception {
+        String path = "/sqli/boolean/error-page/";
+        nano.addHandler(errorPageOnFalseConditionHandler(path, "id", statusCode, body));
+        rule.init(getHttpMessage(path + "?id=1"), parent);
+
+        rule.scan();
+
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    private static UrlParamValueHandler errorPageOnFalseConditionHandler(
+            String path, String paramName, int statusCode, String body) {
+        return UrlParamValueHandler.builder()
+                .targetPath(path)
+                .targetParam(paramName)
+                .when(
+                        param(paramName)
+                                .matches(BooleanBasedDetectionStrategyUnitTest::isFalseCondition))
+                .thenReturn(statusCode, body)
+                .fallbackHtmlResponse(TRUE_CONDITION_CONTENT)
+                .build();
+    }
+
+    /**
      * Simulates a page vulnerable to boolean-based blind SQLi: a true condition reproduces the
      * baseline content, a false condition returns different (empty) content, anything else is
      * treated like the baseline.
@@ -96,17 +155,29 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
             // string, and reflecting it back here would make ComparableResponse see every
             // response as different just because the payload text differs.
             String value = getFirstParamValue(session, param);
-            // Recognise the AND_FALSE variants of the safer boolean condition pairs:
-            // arithmetic (2>3), BETWEEN false range (BETWEEN 5 AND 6),
-            // LIKE false prefix (LIKE 'z%), and IS NOT NULL applied to NULL.
-            if (value != null
-                    && (value.contains("2>3")
-                            || value.contains("BETWEEN 5 AND 6")
-                            || value.contains("LIKE 'z%")
-                            || value.contains("IS NOT NULL"))) {
+            if (isFalseCondition(value)) {
                 return newFixedLengthResponse("");
             }
-            return newFixedLengthResponse("Some Content, matching row found");
+            return newFixedLengthResponse(TRUE_CONDITION_CONTENT);
         }
+    }
+
+    /** The body a page returns for the original value and for a true condition. */
+    private static final String TRUE_CONDITION_CONTENT = "Some Content, matching row found";
+
+    /**
+     * Whether the value carries the AND_FALSE half of one of the safer boolean condition pairs:
+     * arithmetic (2>3), BETWEEN false range (BETWEEN 5 AND 6), LIKE false prefix (LIKE 'z%), and IS
+     * NOT NULL applied to NULL.
+     *
+     * @param value the parameter value sent
+     * @return true if it is the false half of a pair
+     */
+    private static boolean isFalseCondition(String value) {
+        return value != null
+                && (value.contains("2>3")
+                        || value.contains("BETWEEN 5 AND 6")
+                        || value.contains("LIKE 'z%")
+                        || value.contains("IS NOT NULL"));
     }
 }

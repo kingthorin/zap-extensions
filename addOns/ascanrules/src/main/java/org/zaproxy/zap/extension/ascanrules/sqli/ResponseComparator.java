@@ -20,6 +20,7 @@
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
 import org.parosproxy.paros.network.HttpMessage;
+import org.parosproxy.paros.network.HttpStatusCode;
 import org.zaproxy.addon.commonlib.http.ComparableResponse;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ResponseBodyUtils;
 
@@ -125,6 +126,41 @@ public class ResponseComparator {
 
     private static boolean equals(String a, String b) {
         return (a == null && b == null) || (a != null && a.equals(b));
+    }
+
+    /**
+     * Whether the difference between a baseline response and a probe response is explained by the
+     * probe being answered with an error page, rather than by the probe's value having changed the
+     * outcome of the query.
+     *
+     * <p>Excludes the reported false positives:
+     *
+     * <ul>
+     *   <li>zaproxy/zaproxy#8652: the false condition of a boolean pair answered with {@code 429
+     *       Too Many Requests} while the original value and the true condition were both answered
+     *       {@code 200}.
+     *   <li>zaproxy/zaproxy#8653: a payload rejected with {@code 403 Forbidden} by a WAF where the
+     *       original value returned a static asset with {@code 200}.
+     *   <li>zaproxy/zaproxy#8651 and zaproxy/zaproxy#9289: a numeric parameter cast to an integer,
+     *       where the confirming expression resolved to a non-existing id and so was answered with
+     *       a {@code 404} error page.
+     *   <li>zaproxy/zaproxy#8525: a slow handler answering the false condition with {@code 500}.
+     * </ul>
+     *
+     * <p>Directional on purpose: when the baseline is itself an error response, a difference
+     * between two error responses is still evidence.
+     *
+     * @param baseline the baseline message
+     * @param probe the message sent with the probe value
+     * @return true if the probe's error status explains the difference
+     */
+    public boolean isDifferenceExplainedByErrorStatus(HttpMessage baseline, HttpMessage probe) {
+        return !isErrorStatus(baseline.getResponseHeader().getStatusCode())
+                && isErrorStatus(probe.getResponseHeader().getStatusCode());
+    }
+
+    private static boolean isErrorStatus(int statusCode) {
+        return HttpStatusCode.isClientError(statusCode) || HttpStatusCode.isServerError(statusCode);
     }
 
     private float similarity(HttpMessage a, String aValue, HttpMessage b, String bValue) {

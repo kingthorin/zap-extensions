@@ -23,14 +23,18 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.zaproxy.zap.testutils.RequestCondition.param;
 
 import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.parosproxy.paros.network.HttpHeader;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
 import org.zaproxy.zap.testutils.NanoServerHandler;
+import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
 /**
  * Integration test for {@link ExpressionBasedDetectionStrategy}, exercised through the full {@link
@@ -58,6 +62,124 @@ class ExpressionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModul
         rule.scan();
 
         assertThat(alertsRaised, is(empty()));
+    }
+
+    /**
+     * A numeric parameter that the application casts to an integer, as WordPress does with its
+     * {@code ?p=} page id: every existing id returns the same empty page and every non-existing id
+     * returns a 404. The confirming expression resolves to a non-existing id, so the only thing
+     * distinguishing it from the baseline is the error page -- reported as zaproxy/zaproxy#8651 for
+     * {@code ?p=} and zaproxy/zaproxy#9289 for a plain numeric form field.
+     */
+    @Test
+    void shouldNotAlertWhenMissingIdOnlyDiffersByErrorStatus() throws Exception {
+        // Given
+        String path = "/sqli/expression/int-cast/";
+        nano.addHandler(
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("id")
+                        .when(
+                                param("id")
+                                        .matches(
+                                                value ->
+                                                        EXISTING_IDS.contains(
+                                                                leadingDigits(value))))
+                        .thenReturn("")
+                        .when(param("id").matches(value -> true))
+                        .thenReturn(NOT_FOUND, "Not found")
+                        .build());
+
+        // When
+        rule.init(getHttpMessage(path + "?id=1"), parent);
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    /**
+     * The same {@code ?p=} cast as {@link #shouldNotAlertWhenMissingIdOnlyDiffersByErrorStatus()},
+     * but with WordPress's canonical redirects: an existing id answers {@code 301} to its page and
+     * a non-existing id answers {@code 404}. This rule follows redirects, so what it compares are
+     * the landing pages, which differ per id -- it must not alert (reported as
+     * zaproxy/zaproxy#8651).
+     */
+    @Test
+    void shouldNotAlertWhenPageIdsRedirectToDifferentPages() throws Exception {
+        // Given: the landing pages are registered first, as the server routes a request to the
+        // first
+        // handler whose path is a prefix of the request path, and these only see followed
+        // redirects.
+        nano.addHandler(
+                new NanoServerHandler("/page/") {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String id = session.getUri().substring("/page/".length());
+                        return NanoHTTPD.newFixedLengthResponse("Page " + id);
+                    }
+                });
+        String path = "/sqli/expression/page-id/";
+        nano.addHandler(new PageIdRedirectHandler(path, "id"));
+
+        // When
+        rule.init(getHttpMessage(path + "?id=1"), parent);
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    private static final Set<String> EXISTING_IDS = Set.of("1", "2", "3");
+
+    private static final int NOT_FOUND = 404;
+
+    /**
+     * The leading integer of a value, which is what an application that casts the parameter to an
+     * integer effectively uses: {@code 3-2} starts from 3 and {@code 2/2} from 2.
+     *
+     * @param value the parameter value sent
+     * @return the leading digits, or an empty string if there are none
+     */
+    private static String leadingDigits(String value) {
+        if (value == null) {
+            return "";
+        }
+        int end = 0;
+        while (end < value.length() && Character.isDigit(value.charAt(end))) {
+            end++;
+        }
+        return value.substring(0, end);
+    }
+
+    /**
+     * A page id parameter cast to an integer: an existing id answers {@code 301} to the page, a
+     * non-existing id answers {@code 404}, like WordPress does with {@code ?p=}.
+     */
+    private static class PageIdRedirectHandler extends NanoServerHandler {
+
+        private final String param;
+
+        PageIdRedirectHandler(String path, String param) {
+            super(path);
+            this.param = param;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String id = leadingDigits(getFirstParamValue(session, param));
+            if (!EXISTING_IDS.contains(id)) {
+                return NanoHTTPD.newFixedLengthResponse(
+                        Response.Status.NOT_FOUND, NanoHTTPD.MIME_HTML, "Not found");
+            }
+            Response response =
+                    NanoHTTPD.newFixedLengthResponse(
+                            // WordPress sends 301; the code itself is immaterial here, as this
+                            // rule follows the redirect and compares the landing page.
+                            Response.Status.REDIRECT, NanoHTTPD.MIME_HTML, "");
+            response.addHeader(HttpHeader.LOCATION, "/page/" + id + "/");
+            return response;
+        }
     }
 
     /**

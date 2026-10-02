@@ -125,6 +125,13 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
                 !comparator.matchesExactlyAfterStripping(
                         msg1, originalValue, variant1, msg2, originalValue, variant2);
 
+        // An error page for the confirming expression alone -- e.g. a parameter cast to an integer,
+        // where the confirming expression resolves to a non-existent id -- is not a difference in
+        // results, so it does not alert.
+        if (comparator.isDifferenceExplainedByErrorStatus(baselineMsg, msg2)) {
+            return false;
+        }
+
         if (variant2DiffersFromBaseline && variant2DiffersFromVariant1) {
             // Expressions are being evaluated: baseline = variant1 but both differ from variant2
             context.newAlert()
