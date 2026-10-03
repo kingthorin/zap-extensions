@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.parosproxy.paros.network.HttpHeader;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
+import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenarioCorpus;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
@@ -130,7 +131,10 @@ class ExpressionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModul
         assertThat(alertsRaised, is(empty()));
     }
 
-    private static final Set<String> EXISTING_IDS = Set.of("1", "2", "3");
+    /**
+     * Page ids that exist, shared with the corpus so both describe the same int-cast application.
+     */
+    private static final Set<String> EXISTING_IDS = SqlInjectionScenarioCorpus.EXISTING_IDS;
 
     private static final int NOT_FOUND = 404;
 
@@ -142,14 +146,7 @@ class ExpressionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModul
      * @return the leading digits, or an empty string if there are none
      */
     private static String leadingDigits(String value) {
-        if (value == null) {
-            return "";
-        }
-        int end = 0;
-        while (end < value.length() && Character.isDigit(value.charAt(end))) {
-            end++;
-        }
-        return value.substring(0, end);
+        return SqlInjectionScenarioCorpus.leadingDigits(value);
     }
 
     /**

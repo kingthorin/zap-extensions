@@ -32,6 +32,7 @@ import fi.iki.elonen.NanoHTTPD.Response;
 import org.junit.jupiter.api.Test;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
+import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenarioCorpus;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
@@ -126,9 +127,7 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
         return UrlParamValueHandler.builder()
                 .targetPath(path)
                 .targetParam(paramName)
-                .when(
-                        param(paramName)
-                                .matches(BooleanBasedDetectionStrategyUnitTest::isFalseCondition))
+                .when(param(paramName).matches(SqlInjectionScenarioCorpus::isFalseCondition))
                 .thenReturn(statusCode, body)
                 .fallbackHtmlResponse(TRUE_CONDITION_CONTENT)
                 .build();
@@ -155,7 +154,7 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
             // string, and reflecting it back here would make ComparableResponse see every
             // response as different just because the payload text differs.
             String value = getFirstParamValue(session, param);
-            if (isFalseCondition(value)) {
+            if (SqlInjectionScenarioCorpus.isFalseCondition(value)) {
                 return newFixedLengthResponse("");
             }
             return newFixedLengthResponse(TRUE_CONDITION_CONTENT);
@@ -163,21 +162,5 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
     }
 
     /** The body a page returns for the original value and for a true condition. */
-    private static final String TRUE_CONDITION_CONTENT = "Some Content, matching row found";
-
-    /**
-     * Whether the value carries the AND_FALSE half of one of the safer boolean condition pairs:
-     * arithmetic (2>3), BETWEEN false range (BETWEEN 5 AND 6), LIKE false prefix (LIKE 'z%), and IS
-     * NOT NULL applied to NULL.
-     *
-     * @param value the parameter value sent
-     * @return true if it is the false half of a pair
-     */
-    private static boolean isFalseCondition(String value) {
-        return value != null
-                && (value.contains("2>3")
-                        || value.contains("BETWEEN 5 AND 6")
-                        || value.contains("LIKE 'z%")
-                        || value.contains("IS NOT NULL"));
-    }
+    private static final String TRUE_CONDITION_CONTENT = SqlInjectionScenarioCorpus.NORMAL_CONTENT;
 }
