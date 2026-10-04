@@ -67,7 +67,6 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
     @Test
     void printsCorpusMetrics() throws Exception {
         List<SqlInjectionScenario> scenarios = SqlInjectionScenarioCorpus.scenarios();
-        assertCorpusCanBeMeasured(scenarios);
 
         List<ScenarioResult> results = new ArrayList<>(scenarios.size());
         for (SqlInjectionScenario scenario : scenarios) {
@@ -79,12 +78,13 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
             }
         }
 
+        assertCorpusCanBeMeasured(scenarios, results);
         printReport(results);
     }
 
     private ScenarioResult run(SqlInjectionScenario scenario) throws Exception {
         nano.addHandler(scenario.fixture().get());
-        rule.init(getHttpMessage(scenario.requestTarget()), parent);
+        rule.init(scenarioRequest(scenario), parent);
 
         rule.scan();
 
@@ -110,12 +110,15 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
     }
 
     /**
-     * The corpus has to contain both kinds of row for the numbers to mean anything, and ids have to
-     * be unique or a failing scenario cannot be identified from the table.
+     * The corpus has to contain both kinds of row for the numbers to mean anything, ids have to be
+     * unique or a failing scenario cannot be identified from the table, and every row has to have
+     * been scanned at all: a row that sent no requests is a fixture or a request that is wrong, and
+     * reporting that as "no alerts" would hide it instead of failing.
      */
-    private static void assertCorpusCanBeMeasured(List<SqlInjectionScenario> scenarios) {
+    private static void assertCorpusCanBeMeasured(
+            List<SqlInjectionScenario> scenarios, List<ScenarioResult> results) {
         assertThat(scenarios, hasSize(greaterThan(0)));
-        long injectable = scenarios.stream().filter(s -> s.outcome() == Outcome.INJECTABLE).count();
+        long injectable = scenarios.stream().filter(SqlInjectionScenario::expectsAlert).count();
         assertThat(injectable, greaterThanOrEqualTo(1L));
         assertThat(scenarios.size() - injectable, greaterThanOrEqualTo(1L));
 
@@ -126,6 +129,12 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
                     "corpus row without a source: " + scenario.id(),
                     scenario.source().isEmpty(),
                     is(false));
+        }
+        for (ScenarioResult result : results) {
+            assertThat(
+                    "corpus row that was never scanned: " + result.id(),
+                    result.requests(),
+                    greaterThan(0));
         }
     }
 
@@ -157,11 +166,12 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
         out.println();
         out.println("=== SQL injection corpus metrics (rule 424242, MEDIUM strength) ===");
         out.printf(
-                "scenarios: %d  injectable: %d  safe: %d  fp-prone: %d%n",
+                "scenarios: %d  injectable: %d  safe: %d  fp-prone: %d  blind: %d%n",
                 results.size(),
                 injectable,
                 count(results, Outcome.SAFE),
-                count(results, Outcome.FP_PRONE));
+                count(results, Outcome.FP_PRONE),
+                count(results, Outcome.BLIND));
         out.printf(
                 "coverage:         %d/%d (%.1f%%)%n",
                 truePositives, injectable, percentage(truePositives, injectable));
@@ -171,6 +181,9 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
                 falsePositivesSafe,
                 falsePositivesFpProne);
         out.printf("false negatives:  %d%n", injectable - truePositives);
+        out.printf(
+                "known blind gaps: %d  (injectable, time-based only: no technique for it)%n",
+                count(results, Outcome.BLIND));
         out.printf(
                 "requests/param:   mean %.1f  min %d  max %d%n",
                 average(totalRequests, results.size()), fewestRequests, mostRequests);

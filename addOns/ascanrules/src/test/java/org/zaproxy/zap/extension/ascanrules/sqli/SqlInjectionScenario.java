@@ -40,6 +40,7 @@ import org.zaproxy.zap.testutils.NanoServerHandler;
  * @param outcome what the rule is expected to do, and why
  * @param source where the scenario comes from, e.g. {@code zaproxy/zaproxy#8651}
  * @param requestTarget the path and query the rule is initialised with
+ * @param requestBody an {@code application/x-www-form-urlencoded} body, empty for a GET request
  * @param fixture the server fixture answering the requests of the scenario
  */
 public record SqlInjectionScenario(
@@ -47,6 +48,7 @@ public record SqlInjectionScenario(
         Outcome outcome,
         String source,
         String requestTarget,
+        String requestBody,
         Supplier<NanoServerHandler> fixture) {
 
     /** What the rule is expected to do with a scenario, and why it is in the corpus. */
@@ -65,7 +67,21 @@ public record SqlInjectionScenario(
          * WAF, an error page, an int-cast id. The rule must not alert, and a false positive here is
          * the regression a reported ticket describes.
          */
-        FP_PRONE
+        FP_PRONE,
+        /**
+         * Injectable, but only observable through a channel the rule does not have — a real blind,
+         * time-based injection, where the response is the same however the query resolves. The rule
+         * must not alert, and this is reported separately rather than as a false negative, because
+         * calling it one would hide that it is a known and accepted limit: rule 424242 has no
+         * time-based technique, for the same reason the time-based half of zaproxy/zaproxy#8525
+         * does not apply to it.
+         */
+        BLIND
+    }
+
+    /** Whether the rule is expected to alert on a scenario with this outcome. */
+    public boolean expectsAlert() {
+        return outcome == Outcome.INJECTABLE;
     }
 
     @Override

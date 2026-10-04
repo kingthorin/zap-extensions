@@ -20,6 +20,8 @@
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
 import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
+import org.parosproxy.paros.network.HttpHeader;
+import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.extension.ascanrules.ExtensionAscanRules;
 import org.zaproxy.zap.testutils.ActiveScannerTestUtils;
 
@@ -59,5 +61,33 @@ public abstract class AbstractSqlInjectionModularScanRuleTest
             case INSANE:
                 return recommendMax + 7;
         }
+    }
+
+    /**
+     * Builds the request a corpus scenario is scanned with: a plain GET, or a form POST when the
+     * scenario carries a body, the way the login and admin forms of the applications being modelled
+     * send it.
+     *
+     * <p>Both the corpus and the metrics runner go through here, so a row cannot be scanned as a
+     * GET by one and as a POST by the other - which is how the metrics runner once reported zero
+     * requests for every POST row.
+     *
+     * @param scenario the scenario to build the request for
+     * @return the request the rule is initialised with
+     * @throws Exception if the request cannot be built
+     */
+    protected HttpMessage scenarioRequest(SqlInjectionScenario scenario) throws Exception {
+        if (scenario.requestBody().isEmpty()) {
+            return getHttpMessage(scenario.requestTarget());
+        }
+        HttpMessage message =
+                getHttpMessage(
+                        "POST",
+                        scenario.requestTarget(),
+                        SqlInjectionScenarioCorpus.NORMAL_CONTENT);
+        message.getRequestHeader()
+                .setHeader(HttpHeader.CONTENT_TYPE, HttpHeader.FORM_URLENCODED_CONTENT_TYPE);
+        message.setRequestBody(scenario.requestBody());
+        return message;
     }
 }

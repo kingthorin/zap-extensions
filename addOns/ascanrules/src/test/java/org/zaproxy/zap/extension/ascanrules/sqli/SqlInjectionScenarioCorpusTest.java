@@ -31,7 +31,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Runs the corpus through {@link SqlInjectionModularScanRule} and asserts each scenario's label:
- * injectable ones alert, safe and false-positive-prone ones do not.
+ * injectable ones alert, safe, false-positive-prone and blind ones do not.
  *
  * <p>The labels are what makes the corpus measurable — see {@link SqlInjectionScenario}. Reporting
  * the counts across scenarios is a separate concern (the metrics runner); this test only holds
@@ -48,13 +48,13 @@ class SqlInjectionScenarioCorpusTest extends AbstractSqlInjectionModularScanRule
     void scenarioMatchesItsLabel(SqlInjectionScenario scenario) throws Exception {
         // Given
         nano.addHandler(scenario.fixture().get());
-        rule.init(getHttpMessage(scenario.requestTarget()), parent);
+        rule.init(scenarioRequest(scenario), parent);
 
         // When
         rule.scan();
 
         // Then
-        if (scenario.outcome() == SqlInjectionScenario.Outcome.INJECTABLE) {
+        if (scenario.expectsAlert()) {
             assertThat(alertsRaised, hasSize(greaterThan(0)));
         } else {
             assertThat(alertsRaised, is(empty()));

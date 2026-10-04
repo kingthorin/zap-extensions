@@ -19,12 +19,15 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
+import static org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome.BLIND;
 import static org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome.FP_PRONE;
 import static org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome.INJECTABLE;
 import static org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome.SAFE;
+import static org.zaproxy.zap.testutils.RequestCondition.formParam;
 import static org.zaproxy.zap.testutils.RequestCondition.param;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
@@ -35,9 +38,21 @@ import org.zaproxy.zap.testutils.UrlParamValueHandler;
  * lines. A row earns its place by either naming a reported false positive (so the regression is
  * re-testable) or contributing measurable coverage, not by exercising a code path.
  *
- * <p>The CVE-shaped rows (multipart POST, date parameters, ORDER BY position, path parameters,
- * authenticated requests) are deliberately absent: each needs a source CVE, and until they exist
- * the rule cannot show whether it covers those shapes at all.
+ * <p>The CVE-shaped rows carry their source and the shape it came from. Two shapes that real,
+ * recently exploited SQL injection turns up in have no row, because a row has to be runnable and
+ * neither is reachable from here:
+ *
+ * <ul>
+ *   <li>**Injection through an HTTP header.** MOVEit Transfer (CVE-2023-34362, exploited in the
+ *       wild) injects through {@code X-siLock-SessVar2}, not a parameter. This rule is an {@code
+ *       AbstractAppParamPlugin}, so it scans parameters only: the shape is out of reach by
+ *       construction, not by accident.
+ *   <li>**Multipart form bodies.** The harness parses urlencoded bodies, so the Royal Event row
+ *       (CVE-2022-28080) keeps the parameter and value shape but not the multipart transport.
+ * </ul>
+ *
+ * <p>Both are recorded here rather than left implicit, because a coverage limit that is written
+ * down is a decision and one that is not is a surprise.
  */
 public final class SqlInjectionScenarioCorpus {
 
@@ -57,7 +72,132 @@ public final class SqlInjectionScenarioCorpus {
                 echoOnlySearch(),
                 rateLimitedFalseCondition(),
                 wafForbiddenOnPayload(),
-                intCastPageIds());
+                intCastPageIds(),
+                wordpressTaxQuery(),
+                wordPressSearchOrderBy(),
+                blindDateFilter());
+    }
+
+    /** The body a POST scenario sends before the parameter under test, kept short on purpose. */
+    private static final String FORM_PREFIX = "action=search&";
+
+    /**
+     * WordPress core before 5.8.3 built the SQL for {@code WP_Query} from an unsanitised {@code
+     * tax_query} value in an AJAX form field, so the injection sits inside a JSON document carried
+     * by a form parameter rather than in the parameter value itself (CVE-2022-21661, ZDI-22-020).
+     */
+    private static SqlInjectionScenario wordpressTaxQuery() {
+        return new SqlInjectionScenario(
+                "wordpress-tax-query-json",
+                INJECTABLE,
+                "CVE-2022-21661, ZDI-22-020",
+                "/wp-admin/admin-ajax.php",
+                FORM_PREFIX
+                        + "query_vars=%7B%22tax_query%22%3A%7B%220%22%3A%7B%22terms%22%3A%5B%22shoes%22%5D%7D%7D%7D",
+                () ->
+                        UrlParamValueHandler.builder()
+                                .targetPath("/wp-admin/admin-ajax.php")
+                                .targetParam("query_vars")
+                                .when(
+                                        formParam("query_vars")
+                                                .matches(
+                                                        value ->
+                                                                value.contains("'")
+                                                                        || value.contains("UNION")))
+                                .thenReturn(
+                                        200,
+                                        "You have an error in your SQL syntax near '' at line 1")
+                                .fallbackHtmlResponse("<li>No products found</li>")
+                                .build());
+    }
+
+    /**
+     * An {@code ORDER BY} position parameter: the WordPress bulk editor passed {@code orderby}
+     * through {@code esc_sql()} straight into the query, which escapes quotes but not a subquery
+     * appended after a comma (WordPress SEO by Yoast &le; 1.7.3.3, Exploit-DB 36413, WPVULNDB
+     * 7841).
+     *
+     * <p>Labelled {@link SqlInjectionScenario.Outcome#BLIND} because that is what the published
+     * proof of concept observes — the query executes and the page sleeps — while the response is
+     * the same either way. A rule with a time-based technique would catch it; this one has none, so
+     * the row documents a known limit rather than pretending the shape is undetectable in
+     * principle.
+     */
+    private static SqlInjectionScenario wordPressSearchOrderBy() {
+        return new SqlInjectionScenario(
+                "wordpress-bulk-editor-orderby",
+                BLIND,
+                "Exploit-DB 36413, WPVULNDB 7841",
+                "/wp-admin/admin.php?page=wpseo_bulk-editor&type=title&order=asc",
+                "",
+                () ->
+                        UrlParamValueHandler.builder()
+                                .targetPath("/wp-admin/admin.php")
+                                .targetParam("orderby")
+                                .fallbackHtmlResponse("<table id=\"bulk-editor\"></table>")
+                                .build());
+    }
+
+    /**
+     * A date-range filter parameter behind a login, injectable through a {@code UNION} that
+     * reflects a random canary back in the response — the shape of the published proof of concept
+     * for the Royal Event management system (CVE-2022-28080, Exploit-DB 50934). It is the corpus's
+     * only canary-reflection row so far, and the reason canary reflection is on the roadmap.
+     *
+     * <p>The published proof of concept posts the filter as {@code multipart/form-data}; the test
+     * harness parses urlencoded bodies, so the fixture uses the same parameter with the same value
+     * shape over a urlencoded POST. The multipart transport itself is therefore untested.
+     */
+    private static SqlInjectionScenario blindDateFilter() {
+        return new SqlInjectionScenario(
+                "royal-event-date-filter-canary",
+                INJECTABLE,
+                "CVE-2022-28080, Exploit-DB 50934",
+                "/royal_event/btndates_report.php",
+                FORM_PREFIX + "todate=01%2F01%2F2011&search=3&fromdate=01%2F01%2F2011",
+                () ->
+                        UrlParamValueHandler.builder()
+                                .targetPath("/royal_event/btndates_report.php")
+                                .targetParam("todate")
+                                .when(
+                                        formParam("todate")
+                                                .matches(
+                                                        SqlInjectionScenarioCorpus
+                                                                ::unionHas15Columns))
+                                .thenReturn(
+                                        200,
+                                        "<td class=\"data\">e10adc3949ba59abbe56e057f20f883e</td>")
+                                .when(
+                                        formParam("todate")
+                                                .matches(
+                                                        value ->
+                                                                value.toUpperCase(Locale.ROOT)
+                                                                        .contains("UNION")))
+                                .thenReturn(
+                                        200,
+                                        "The used SELECT statements have a different number of"
+                                                + " columns")
+                                .fallbackHtmlResponse("<td class=\"data\">No bookings</td>")
+                                .build());
+    }
+
+    /**
+     * Whether the value is a {@code UNION} selecting the 15 columns the published proof of concept
+     * needs: thirteen {@code NULL}s, a canary, and a trailing {@code NULL}. A {@code UNION} with
+     * any other number of columns is what a real application rejects with a database error, which
+     * is the signal the rule is expected to find here; the canary reflection is Step 6's business.
+     */
+    private static boolean unionHas15Columns(String value) {
+        if (value == null || !value.toUpperCase(Locale.ROOT).contains("UNION")) {
+            return false;
+        }
+        int columns = 0;
+        for (String column : value.split("(?i)union\\s+(all\\s+)?select", 2)[1].split(",")) {
+            if (!column.isBlank()) {
+                columns++;
+            }
+        }
+        return columns == 15;
     }
 
     /**
@@ -71,6 +211,7 @@ public final class SqlInjectionScenarioCorpus {
                 INJECTABLE,
                 "zaproxy/zaproxy#557",
                 "/rest/products/search?q=shoes",
+                "",
                 () ->
                         UrlParamValueHandler.builder()
                                 .targetPath("/rest/products/search")
@@ -89,6 +230,7 @@ public final class SqlInjectionScenarioCorpus {
                 INJECTABLE,
                 "WAVSEP-style",
                 "/item?id=1",
+                "",
                 () ->
                         UrlParamValueHandler.builder()
                                 .targetPath("/item")
@@ -113,6 +255,7 @@ public final class SqlInjectionScenarioCorpus {
                 SAFE,
                 "WAVSEP-style",
                 "/search?q=shoes",
+                "",
                 () ->
                         UrlParamValueHandler.builder()
                                 .targetPath("/search")
@@ -131,6 +274,7 @@ public final class SqlInjectionScenarioCorpus {
                 FP_PRONE,
                 "zaproxy/zaproxy#8652",
                 "/item?id=1",
+                "",
                 () -> errorPageOnFalseCondition(429, "too many requests"));
     }
 
@@ -145,6 +289,7 @@ public final class SqlInjectionScenarioCorpus {
                 FP_PRONE,
                 "zaproxy/zaproxy#8653, zaproxy/zaproxy#8636",
                 "/static/app.min.js?v=8f2a1c",
+                "",
                 () ->
                         UrlParamValueHandler.builder()
                                 .targetPath("/static/app.min.js")
@@ -170,6 +315,7 @@ public final class SqlInjectionScenarioCorpus {
                 FP_PRONE,
                 "zaproxy/zaproxy#8651, zaproxy/zaproxy#9289",
                 "/page?id=1",
+                "",
                 () ->
                         UrlParamValueHandler.builder()
                                 .targetPath("/page")
