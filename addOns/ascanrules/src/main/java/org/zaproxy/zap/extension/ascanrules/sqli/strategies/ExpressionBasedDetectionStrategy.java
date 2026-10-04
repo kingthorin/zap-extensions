@@ -48,8 +48,8 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         }
 
         int budget = context.getRemainingBudget();
-        if (budget < 3) {
-            return false; // Need at least 3 requests: 2 for ADD + 1 for the MULT check
+        if (budget < 2) {
+            return false; // Need the ADD pair; the MULT pair is gated on budget in the loop
         }
 
         // Baseline fetched once for this parameter by the rule

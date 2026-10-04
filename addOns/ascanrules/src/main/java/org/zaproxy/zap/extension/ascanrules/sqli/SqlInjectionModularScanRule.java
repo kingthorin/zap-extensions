@@ -105,14 +105,21 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     // init(), lines 493-543): LOW = error + expression only; MEDIUM adds boolean/union (no order
     // by, no LIKE); HIGH adds order by; LIKE conditions are gated on HIGH by the boolean strategy.
     // Each strategy draws from its own reserved allocation, not a shared pool.
+    //
+    // The counts are one lower than 40018's, because the baseline is no longer in them:
+    // scan() fetches one baseline per parameter and every technique diffs against that
+    // one, so a technique's allocation is all probes. Before, each technique that
+    // compared against a baseline paid the first request of its allocation for it
+    // (BOOLEAN, EXPRESSION, ORDERBY, UNION, LOGINBYPASS). ERROR never did -- it used
+    // the shared baseline from the start -- so it keeps 40018's numbers unchanged.
     private static final Map<String, int[]> TECHNIQUE_BUDGETS =
             Map.ofEntries(
                     Map.entry("ERROR", new int[] {4, 8, 16, 50}),
-                    Map.entry("EXPRESSION", new int[] {4, 8, 16, 50}),
-                    Map.entry("BOOLEAN", new int[] {0, 8, 20, 50}),
-                    Map.entry("ORDERBY", new int[] {0, 0, 5, 50}),
-                    Map.entry("UNION", new int[] {0, 5, 10, 50}),
-                    Map.entry("LOGINBYPASS", new int[] {0, 6, 6, 6}));
+                    Map.entry("EXPRESSION", new int[] {3, 7, 15, 49}),
+                    Map.entry("BOOLEAN", new int[] {0, 7, 19, 49}),
+                    Map.entry("ORDERBY", new int[] {0, 0, 4, 49}),
+                    Map.entry("UNION", new int[] {0, 4, 9, 49}),
+                    Map.entry("LOGINBYPASS", new int[] {0, 5, 5, 5}));
 
     private String paramName;
     private String originalValue;
