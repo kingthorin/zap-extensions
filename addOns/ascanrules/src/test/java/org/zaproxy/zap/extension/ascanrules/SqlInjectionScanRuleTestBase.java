@@ -178,6 +178,21 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
     private static final Pattern SQL_OR_OPERATOR =
             Pattern.compile("\\bor\\b", Pattern.CASE_INSENSITIVE);
 
+    /**
+     * The number of requests {@code FiveHundredErrors.shouldAlertIf500OnSingleQuote} is expected to
+     * cost. The two rules baseline differently: the generic rule (40018) sends the quote against
+     * the base message and stops, spending two requests (control, quote), while the modular rule
+     * (424242) also fetches one baseline per parameter, shared by every technique, for three.
+     *
+     * <p>Stated as an exact count on purpose -- it is the budget regression signal for whichever
+     * rule is under test, so raising it hides exactly what it exists to catch.
+     *
+     * @return the expected number of requests
+     */
+    protected int expectedRequestsForSingleQuote500() {
+        return 2;
+    }
+
     @Override
     protected int getRecommendMaxNumberMessagesPerParam(AttackStrength strength) {
         int recommendMax = super.getRecommendMaxNumberMessagesPerParam(strength);
@@ -1243,7 +1258,7 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
             // When
             rule.scan();
             // Then
-            assertThat(httpMessagesSent, hasSize(equalTo(2)));
+            assertThat(httpMessagesSent, hasSize(equalTo(expectedRequestsForSingleQuote500())));
             assertThat(alertsRaised, hasSize(1));
             assertThat(
                     alertsRaised.get(0).getEvidence(),

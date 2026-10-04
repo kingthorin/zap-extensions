@@ -19,67 +19,26 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
-import java.io.IOException;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.extension.ascanrules.sqli.DbErrorSignatures;
-import org.zaproxy.zap.extension.ascanrules.sqli.ResponseComparator;
 import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
 /**
- * Detects pages with excessively strict input validation that reject any appended characters, not
- * just SQL injection payloads. Such pages are false positives for injection detection strategies
- * that rely on appending payloads.
+ * Guards the techniques that treat a database error response as evidence: a page that already
+ * errors on a value with no SQL metacharacters at all is erroring on anything, so a signature match
+ * on a payload says nothing about the payload.
  *
- * <p>The guard works by: (1) appending a safe, non-SQL-metacharacter suffix to the original value,
- * (2) comparing the response to the baseline, and (3) flagging as strict if the baseline and
- * safe-suffix responses are similar (page accepts the safe suffix) while the attack response
- * differs significantly (page rejects the attack payload). This signature indicates the page is
- * selectively rejecting payloads, not accepting all input equally.
+ * <p>An earlier revision also had a {@code detectsStrictInputValidation} check, which vetoed a
+ * signature hit when the appended safe-suffix control looked like the baseline while the attack did
+ * not. That is also exactly the shape of a genuine error-based injection -- normal page for a
+ * benign value, database error for a quote -- so it cancelled real hits: the AltoroJ Derby error (a
+ * 200 whose body names the parse error) and every generic JDBC/ODBC signature asserted by {@code
+ * SqlInjectionScanRuleTestBase}'s parameterised error tests. The control check below is the
+ * evidence-based part and is what remains.
  */
 public final class StrictInputValidationGuard {
 
-    /** A suffix with no SQL metacharacters, used to detect overly-strict input validation. */
-    public static final String SAFE_SUFFIX = "S4feV4lu3";
-
-    private static final ResponseComparator comparator = new ResponseComparator();
-
     private StrictInputValidationGuard() {}
-
-    /**
-     * Checks whether the page rejects any appended suffix (including safe ones), indicating strict
-     * input validation rather than SQL injection vulnerability.
-     *
-     * @param context the scan context
-     * @param originalValue the original parameter value
-     * @param baseline the response from the original value
-     * @param attackMsg the response from the attacked value
-     * @param attackValue the actual attacked value sent
-     * @return true if the page appears to have strict input validation (honeypot signature), false
-     *     otherwise
-     * @throws IOException if network communication fails
-     */
-    public static boolean detectsStrictInputValidation(
-            ScanContext context,
-            String originalValue,
-            HttpMessage baseline,
-            HttpMessage attackMsg,
-            String attackValue)
-            throws IOException {
-        HttpMessage controlMsg = context.newMessage();
-        context.setParam(controlMsg, originalValue + SAFE_SUFFIX);
-        context.sendAndReceive(controlMsg);
-
-        // If baseline ~ control (safe suffix produces similar response to original),
-        // but attack differs, the page is selectively rejecting SQL payloads:
-        // a signature of strict input validation rather than real injection.
-        boolean baselineControlSimilar =
-                comparator.isSimilar(
-                        baseline, originalValue, controlMsg, originalValue + SAFE_SUFFIX);
-        boolean attackDiffers =
-                comparator.isDifferent(baseline, originalValue, attackMsg, attackValue);
-
-        return baselineControlSimilar && attackDiffers;
-    }
 
     /**
      * Whether a value with no SQL metacharacters at all (the scan's cached control value) already

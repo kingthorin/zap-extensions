@@ -28,18 +28,16 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
 /**
  * Detects SQL injection via ORDER BY clause manipulation: appends " ASC -- " to the parameter and
- * checks if the response matches a fresh baseline. If so, appends " DESC -- " as confirmation —
- * both should match a properly-ordered result, but a failed injection likely produces different
- * results.
+ * checks if the response matches the baseline. If so, appends " DESC -- " as confirmation — both
+ * should match a properly-ordered result, but a failed injection likely produces different results.
  *
- * <p>Uses a cheap cascade (baseline → ASC, then DESC only if ASC matched): typical cost is 2 or 3
- * requests. When that oracle is inconclusive and budget allows, a second oracle runs (valid vs
- * out-of-range ORDER BY index, 2 more requests), which is what detects pages whose baseline matches
- * zero rows. Full cost at HIGH strength is therefore 5 requests, the whole allocation.
+ * <p>Uses a cheap cascade (ASC, then DESC only if ASC matched): typical cost is 1 or 2 requests.
+ * When that oracle is inconclusive and budget allows, a second oracle runs (valid vs out-of-range
+ * ORDER BY index, 2 more requests), which is what detects pages whose baseline matches zero rows.
+ * Full cost at HIGH strength is therefore 4 requests.
  *
- * <p>Deliberately re-sends the original value rather than comparing against {@link
- * ScanContext#getBaseMessage()}: that message is stale for real scanning, so a live baseline is the
- * only reliable comparison point.
+ * <p>Compares against the baseline the rule fetches once per parameter ({@link
+ * ScanContext#getCachedBaseline()}), rather than fetching its own copy of the same request.
  */
 public class OrderByDetectionStrategy implements DetectionStrategy {
 
@@ -59,15 +57,13 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
     public boolean detect(ScanContext context) throws IOException {
         String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
         int budget = context.getRemainingBudget();
-        if (budget < 2) {
-            // Minimum 2 requests: baseline + ASC (DESC only sent if ASC matches)
+        if (budget < 1) {
+            // Minimum 1 request: ASC (DESC only sent if ASC matches)
             return false;
         }
 
-        // Send fresh baseline with original value (1 request)
-        HttpMessage baseline = context.newMessage();
-        context.setParam(baseline, originalValue);
-        context.sendAndReceive(baseline);
+        // Baseline fetched once for this parameter by the rule
+        HttpMessage baseline = context.getCachedBaseline();
 
         // Send ASC payload (1 request)
         String ascPayload = originalValue + " ASC -- ";
@@ -85,7 +81,7 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
             return false;
         }
 
-        if (budget < 3) {
+        if (budget < 2) {
             // We matched, but no budget left for DESC confirmation
             return false;
         }

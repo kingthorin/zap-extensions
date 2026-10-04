@@ -35,8 +35,10 @@ import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome;
 
 /**
  * Runs every corpus scenario once and prints the numbers rule 424242 is judged on: coverage, false
- * positives, false negatives, requests per parameter and alerts per parameter, at the default
- * {@code MEDIUM} attack strength.
+ * positives, false negatives, and the requests and alerts a row costs, at the default {@code
+ * MEDIUM} attack strength. A row is one request with all of its parameters, so the request column
+ * is per row, not per parameter: a three-parameter row scans three parameters and pays three times
+ * the per-parameter ceiling.
  *
  * <p>The table is the artifact a change is compared against, kept one row per change in {@code
  * sqli-plan.md}.
@@ -185,9 +187,9 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
                 "known blind gaps: %d  (injectable, time-based only: no technique for it)%n",
                 count(results, Outcome.BLIND));
         out.printf(
-                "requests/param:   mean %.1f  min %d  max %d%n",
+                "requests/row:     mean %.1f  min %d  max %d%n",
                 average(totalRequests, results.size()), fewestRequests, mostRequests);
-        out.printf("alerts/param:     mean %.2f%n", average(totalAlerts, results.size()));
+        out.printf("alerts/row:       mean %.2f%n", average(totalAlerts, results.size()));
         out.println("per scenario:");
         results.forEach(out::println);
         out.println("=== end corpus metrics ===");

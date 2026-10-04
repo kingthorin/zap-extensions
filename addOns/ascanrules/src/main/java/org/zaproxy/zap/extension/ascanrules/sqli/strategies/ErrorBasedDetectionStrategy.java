@@ -63,14 +63,8 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
         int budget = context.getRemainingBudget();
         int used = 0;
 
-        // Reuse cached baseline from scan initialization
+        // The baseline fetched once for this parameter in scan(), before any technique ran.
         HttpMessage baseline = context.getCachedBaseline();
-        if (baseline == null) {
-            baseline = context.newMessage();
-            context.setParam(baseline, originalValue);
-            context.sendAndReceive(baseline);
-            used++;
-        }
 
         // Early exit: if baseline itself contains an error signature, the page is broken
         if (DbErrorSignatures.identify(baseline.getResponseBody().toString()).isPresent()) {
@@ -121,9 +115,9 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
 
     /**
      * Checks one probe response and raises an alert if it is conclusive: either a known DB error
-     * signature (subject to the strict-input-validation guard) or a server error the baseline and
-     * control requests did not produce (a quote that reliably breaks the page). The caller has
-     * already spent the request and checked the budget, so nothing is counted here.
+     * signature or a server error the baseline and control requests did not produce (a quote that
+     * reliably breaks the page). The caller has already spent the request and checked the budget,
+     * so nothing is counted here.
      *
      * @return true if an alert was raised
      */
@@ -132,11 +126,6 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
             throws IOException {
         Optional<Dbms> dbms = DbErrorSignatures.identify(attackMsg.getResponseBody().toString());
         if (dbms.isPresent()) {
-            if (StrictInputValidationGuard.detectsStrictInputValidation(
-                    context, context.getOriginalValue(), baseline, attackMsg, attackValue)) {
-                return false;
-            }
-
             String evidence =
                     dbms.get()
                             .findMatchedFragment(attackMsg.getResponseBody().toString())

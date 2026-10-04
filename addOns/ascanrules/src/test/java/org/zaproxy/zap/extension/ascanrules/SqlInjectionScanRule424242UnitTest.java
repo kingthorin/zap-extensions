@@ -37,4 +37,10 @@ class SqlInjectionScanRule424242UnitTest
         mockMessages(new ExtensionAscanRules());
         return new SqlInjectionModularScanRule();
     }
+
+    @Override
+    protected int expectedRequestsForSingleQuote500() {
+        // Control, the baseline this rule fetches once per parameter, and the quote.
+        return 3;
+    }
 }

@@ -60,10 +60,9 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
     public boolean detect(ScanContext context) throws IOException {
         String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
         int budget = context.getRemainingBudget();
-        if (budget < 2) {
-            // Need at least baseline + one appendage probe; skip entirely so LOW strength (budget
-            // 0,
-            // matching baseline rule 40018) costs no requests.
+        if (budget < 1) {
+            // Need at least one appendage probe (the baseline is already fetched); skip entirely so
+            // LOW strength (budget 0, matching baseline rule 40018) costs no requests.
             return false;
         }
 
@@ -81,17 +80,15 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
             return false;
         }
 
-        // Send baseline with original value
-        HttpMessage baseline = context.newMessage();
-        context.setParam(baseline, originalValue);
-        context.sendAndReceive(baseline);
+        // Baseline fetched once for this parameter by the rule
+        HttpMessage baseline = context.getCachedBaseline();
         String baselineBody = baseline.getResponseBody().toString();
         String baselineStripped =
                 ResponseBodyUtils.stripAllEncodedForms(baselineBody, originalValue);
 
         ComparableResponse baselineResp = new ComparableResponse(baseline, originalValue);
 
-        int used = 1;
+        int used = 0;
         HttpMessage lastUnionMsg = null;
         String lastUnionPayload = null;
 

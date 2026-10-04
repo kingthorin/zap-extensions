@@ -48,15 +48,13 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         }
 
         int budget = context.getRemainingBudget();
-        if (budget < 4) {
-            return false; // Need at least 4 requests: baseline + 2 for ADD + 1 for MULT check
+        if (budget < 3) {
+            return false; // Need at least 3 requests: 2 for ADD + 1 for the MULT check
         }
 
-        // Get baseline response
-        HttpMessage baselineMsg = context.newMessage();
-        context.setParam(baselineMsg, originalValue);
-        context.sendAndReceive(baselineMsg);
-        int used = 1;
+        // Baseline fetched once for this parameter by the rule
+        HttpMessage baselineMsg = context.getCachedBaseline();
+        int used = 0;
 
         // Try ADD variant: if param is 1, try "3-2" and "4-2"
         try {

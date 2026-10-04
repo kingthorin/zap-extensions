@@ -61,15 +61,13 @@ public class LoginBypassDetectionStrategy implements DetectionStrategy {
     public boolean detect(ScanContext context) throws IOException {
         // Gated on budget: LOW strength reserves no requests for this technique (matching
         // baseline rule 40018, which skips it below MEDIUM), so check before sending anything.
-        if (context.getRemainingBudget() < 2) {
+        if (context.getRemainingBudget() < 1) {
             return false;
         }
         String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
 
-        // Baseline
-        HttpMessage baseline = context.newMessage();
-        context.setParam(baseline, originalValue);
-        context.sendAndReceive(baseline);
+        // Baseline fetched once for this parameter by the rule
+        HttpMessage baseline = context.getCachedBaseline();
         String baselineBody = baseline.getResponseBody().toString().toLowerCase();
 
         // Check if this looks like a login context

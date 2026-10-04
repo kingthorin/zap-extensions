@@ -36,10 +36,8 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
  * every row on a vulnerable DELETE/UPDATE. AND conditions restrict rather than expand the matched
  * row set and are therefore safe to probe.
  *
- * <p>Deliberately re-sends the original value rather than comparing against {@link
- * ScanContext#getBaseMessage()}: that message is whatever was last seen for this URL (in ZAP's unit
- * test harness it's not even a real response), so a live baseline is the only reliable comparison
- * point.
+ * <p>Compares against the baseline the rule fetches once per parameter ({@link
+ * ScanContext#getCachedBaseline()}), rather than fetching its own copy of the same request.
  */
 public class BooleanBasedDetectionStrategy implements DetectionStrategy {
 
@@ -49,16 +47,15 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
     public boolean detect(ScanContext context) throws IOException {
         String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
         int budget = context.getRemainingBudget();
-        if (budget < 3) {
-            // Need at least baseline + one true/false probe pair; skip entirely (sends nothing) so
-            // LOW strength (budget 0, matching baseline rule 40018) costs no requests.
+        if (budget < 2) {
+            // Need at least one true/false probe pair (the baseline is already fetched); skip
+            // entirely (sends nothing) so LOW strength (budget 0, matching baseline rule 40018)
+            // costs no requests.
             return false;
         }
 
-        HttpMessage baseline = context.newMessage();
-        context.setParam(baseline, originalValue);
-        context.sendAndReceive(baseline);
-        int used = 1;
+        HttpMessage baseline = context.getCachedBaseline();
+        int used = 0;
 
         for (BooleanConditionPayloads.Condition condition :
                 BooleanConditionPayloads.conditionsFor(context.getAttackStrength())) {

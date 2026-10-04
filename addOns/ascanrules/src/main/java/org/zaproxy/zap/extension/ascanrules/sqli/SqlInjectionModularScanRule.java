@@ -201,7 +201,15 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
         this.originalValue = value;
 
         try {
-            cachedBaseline = msg;
+            // One baseline per parameter, fetched here and shared by every technique: a technique
+            // fetching its own copy only re-buys the same page, once per technique that compares
+            // against a baseline. Fetched rather than reusing the base message because the base
+            // message's response is whatever was last seen for that URL, not this request's own
+            // response, and the diff-based techniques cannot tell a stale page from a payload
+            // difference.
+            cachedBaseline = getNewMsg();
+            setParameter(cachedBaseline, param, value);
+            super.sendAndReceive(cachedBaseline);
             parameterContext = SqliContextAnalyzer.analyze(value, cachedBaseline);
 
             cachedControl = getNewMsg();
