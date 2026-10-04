@@ -220,7 +220,7 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
             parameterContext = SqliContextAnalyzer.analyze(value, cachedBaseline);
 
             cachedControl = getNewMsg();
-            setParameter(cachedControl, param, value + "_safe_control");
+            setParameter(cachedControl, param, value + CONTROL_SUFFIX);
             super.sendAndReceive(cachedControl);
         } catch (IOException e) {
             LOGGER.debug(

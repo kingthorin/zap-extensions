@@ -36,6 +36,21 @@ import org.zaproxy.zap.model.TechSet;
  */
 public interface ScanContext {
 
+    /**
+     * Suffix appended to the original value to build the benign control value, sent once per
+     * parameter before any technique runs. No SQL metacharacters, so a page that errors on it is
+     * erroring on anything, which is what makes it a control rather than a payload.
+     *
+     * <p>Note for whoever is tempted to skip techniques when the baseline and this control agree:
+     * they agreeing is <em>not</em> evidence that the parameter is inert. A page that answers
+     * {@code id=1} and {@code 1_safe_control} with the same shell page can still be
+     * boolean-injectable because its false condition answers with something else ({@code
+     * boolean-injected-id} in the corpus is exactly that shape). The pair does answer "is this page
+     * stable, or noisy?" -- which is what variance work wants -- and "does this page error on
+     * anything?", which {@code errorsOnBenignInput} uses.
+     */
+    String CONTROL_SUFFIX = "_safe_control";
+
     /** The message as originally seen, before any injection. */
     HttpMessage getBaseMessage();
 
