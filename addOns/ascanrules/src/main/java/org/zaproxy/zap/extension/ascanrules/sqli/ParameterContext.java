@@ -28,6 +28,13 @@ public class ParameterContext {
     public final boolean isOrderByContext;
     public final boolean isExpressionContext;
     public final boolean baselineContainsErrorSignature;
+
+    /**
+     * Whether the baseline response's status is a redirect, a client error or a server error, so
+     * the page is not a normal successful answer for this parameter to begin with.
+     */
+    public final boolean baselineIsNonNormalResponse;
+
     public final float dynamicContentVariance;
 
     public ParameterContext(
@@ -37,6 +44,7 @@ public class ParameterContext {
             boolean isOrderByContext,
             boolean isExpressionContext,
             boolean baselineContainsErrorSignature,
+            boolean baselineIsNonNormalResponse,
             float dynamicContentVariance) {
         this.isNumericContext = isNumericContext;
         this.isStringLiteralContext = isStringLiteralContext;
@@ -44,6 +52,7 @@ public class ParameterContext {
         this.isOrderByContext = isOrderByContext;
         this.isExpressionContext = isExpressionContext;
         this.baselineContainsErrorSignature = baselineContainsErrorSignature;
+        this.baselineIsNonNormalResponse = baselineIsNonNormalResponse;
         this.dynamicContentVariance = dynamicContentVariance;
     }
 

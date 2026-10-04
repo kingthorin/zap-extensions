@@ -45,7 +45,91 @@ public class ResponseComparator {
 
     private static final float FUZZY_TUNED_THRESHOLD = 0.97f;
 
-    /** Whether {@code a} and {@code b} represent essentially the same response. */
+    /**
+     * Whether a benign control request is indistinguishable from the baseline, i.e. the parameter
+     * has no effect on the response at all — the case a blind technique cannot work on, because a
+     * page that answers every value the same way also answers the true and the false condition the
+     * same way.
+     *
+     * <p>Strict on purpose, and not the fuzzy {@link #isSimilar}: the question is whether the page
+     * changed, not whether two responses are near each other. A redirect is the case that decides
+     * it — a {@code 301} whose {@code Location} echoes the parameter value and one whose {@code
+     * Location} echoes the control suffix are the same landing page, but they differ in their
+     * headers, so both a fuzzy compare and {@link #matchesExactlyAfterStripping} (which compares
+     * {@code Location} verbatim) call them different. Same status, same {@code Location} with the
+     * value stripped, same body with the value stripped: match.
+     *
+     * @param baseline the response to the original value
+     * @param originalValue the original parameter value
+     * @param control the response to the benign control value
+     * @param controlValue the benign control value sent
+     * @return true if the control response is the same outcome as the baseline
+     */
+    public boolean isIndistinguishableFromBenignControl(
+            HttpMessage baseline, String originalValue, HttpMessage control, String controlValue) {
+        int status = baseline.getResponseHeader().getStatusCode();
+        if (status != control.getResponseHeader().getStatusCode()) {
+            return false;
+        }
+
+        // A redirect's Location echoes the value sent, so it is normalised the way the body is
+        // rather than compared verbatim -- which is what makes the same landing page behind two
+        // different URLs read as one outcome here and as two in matchesExactlyAfterStripping.
+        if (HttpStatusCode.isRedirection(status)) {
+            String location =
+                    ResponseBodyUtils.stripAllEncodedForms(
+                            baseline.getResponseHeader().getHeader("Location"),
+                            originalValue,
+                            controlValue);
+            String controlLocation =
+                    ResponseBodyUtils.stripAllEncodedForms(
+                            control.getResponseHeader().getHeader("Location"),
+                            originalValue,
+                            controlValue);
+            if (!equals(location, controlLocation)) {
+                return false;
+            }
+        }
+
+        return bodiesMatchAfterStripping(
+                baseline.getResponseBody().toString(),
+                originalValue,
+                controlValue,
+                control.getResponseBody().toString(),
+                originalValue,
+                controlValue);
+    }
+
+    /**
+     * Whether two response bodies are the same page: byte-identical, or equal once every form of
+     * the value sent is stripped from each side.
+     *
+     * <p>Byte-identical is checked first on purpose: stripping can manufacture a phantom difference
+     * when the response legitimately contains the value sent (e.g. a page that echoes the
+     * confirmation expression back as content).
+     */
+    private static boolean bodiesMatchAfterStripping(
+            String aBody,
+            String aOriginalValue,
+            String aValueSent,
+            String bBody,
+            String bOriginalValue,
+            String bValueSent) {
+        if (aBody.equals(bBody)) {
+            return true;
+        }
+
+        return ResponseBodyUtils.stripAllEncodedForms(aBody, aOriginalValue, aValueSent)
+                .equals(ResponseBodyUtils.stripAllEncodedForms(bBody, bOriginalValue, bValueSent));
+    }
+
+    /**
+     * Whether {@code a} and {@code b} represent essentially the same response.
+     *
+     * <p>A fuzzy similarity over the whole response, so a header that echoes the value sent counts
+     * against it — fine for "are these the same outcome", wrong for "does this parameter matter",
+     * which is {@link #isIndistinguishableFromBenignControl}.
+     */
     public boolean isSimilar(HttpMessage a, String aValue, HttpMessage b, String bValue) {
         return similarity(a, aValue, b, bValue) >= SIMILARITY_THRESHOLD;
     }
@@ -106,22 +190,15 @@ public class ResponseComparator {
             }
         }
 
-        String aBody = a.getResponseBody().toString();
-        String bBody = b.getResponseBody().toString();
-
-        // Byte-identical bodies are the same outcome regardless of what was sent: stripping below
-        // can manufacture a phantom difference when the response legitimately contains the value
-        // sent (e.g. a page that echoes the confirmation expression back as content).
-        if (aBody.equals(bBody)) {
-            return true;
-        }
-
-        String aStripped =
-                ResponseBodyUtils.stripAllEncodedForms(aBody, aOriginalValue, aValueSent);
-        String bStripped =
-                ResponseBodyUtils.stripAllEncodedForms(bBody, bOriginalValue, bValueSent);
-
-        return aStripped.equals(bStripped);
+        // Bodies are compared byte-identical first, then with the values stripped: see
+        // bodiesMatchAfterStripping.
+        return bodiesMatchAfterStripping(
+                a.getResponseBody().toString(),
+                aOriginalValue,
+                aValueSent,
+                b.getResponseBody().toString(),
+                bOriginalValue,
+                bValueSent);
     }
 
     private static boolean equals(String a, String b) {

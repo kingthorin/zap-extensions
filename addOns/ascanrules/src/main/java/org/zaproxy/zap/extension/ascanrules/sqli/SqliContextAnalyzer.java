@@ -21,6 +21,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli;
 
 import java.util.regex.Pattern;
 import org.parosproxy.paros.network.HttpMessage;
+import org.parosproxy.paros.network.HttpStatusCode;
 
 /** Analyzes baseline response to infer parameter context (numeric, string, etc.). */
 public class SqliContextAnalyzer {
@@ -46,6 +47,12 @@ public class SqliContextAnalyzer {
         boolean baselineContainsErrorSignature =
                 DbErrorSignatures.identify(responseBody).isPresent();
 
+        int baselineStatus = baselineMsg.getResponseHeader().getStatusCode();
+        boolean baselineIsNonNormalResponse =
+                HttpStatusCode.isRedirection(baselineStatus)
+                        || HttpStatusCode.isClientError(baselineStatus)
+                        || HttpStatusCode.isServerError(baselineStatus);
+
         boolean originalValueInResponse = responseBody.contains(originalValue);
         float dynamicContentVariance =
                 responseBody.length() < MIN_RESPONSE_SIZE
@@ -59,6 +66,7 @@ public class SqliContextAnalyzer {
                 isOrderByContext,
                 isExpressionContext,
                 baselineContainsErrorSignature,
+                baselineIsNonNormalResponse,
                 dynamicContentVariance);
     }
 }
