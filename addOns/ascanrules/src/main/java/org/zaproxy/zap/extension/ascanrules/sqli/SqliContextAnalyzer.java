@@ -27,7 +27,6 @@ import org.parosproxy.paros.network.HttpStatusCode;
 public class SqliContextAnalyzer {
 
     private static final Pattern NUMERIC_VALUE = Pattern.compile("^\\d+$");
-    private static final int MIN_RESPONSE_SIZE = 100;
 
     /**
      * Analyzes the baseline response to detect parameter context hints.
@@ -50,17 +49,10 @@ public class SqliContextAnalyzer {
                         || HttpStatusCode.isClientError(baselineStatus)
                         || HttpStatusCode.isServerError(baselineStatus);
 
-        boolean originalValueInResponse = responseBody.contains(originalValue);
-        float dynamicContentVariance =
-                responseBody.length() < MIN_RESPONSE_SIZE
-                        ? 0.8f
-                        : (originalValueInResponse ? 0.3f : 0.6f);
-
         return new ParameterContext(
                 isNumericContext,
                 isStringLiteralContext,
                 baselineContainsErrorSignature,
-                baselineIsNonNormalResponse,
-                dynamicContentVariance);
+                baselineIsNonNormalResponse);
     }
 }

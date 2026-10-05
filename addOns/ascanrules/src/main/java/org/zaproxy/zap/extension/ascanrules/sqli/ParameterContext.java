@@ -29,6 +29,14 @@ package org.zaproxy.zap.extension.ascanrules.sqli;
  * itself, and a LIKE or ORDER BY context cannot be read off the request at all (rule 40018 does not
  * try either — it sends LIKE payloads unconditionally and enables ORDER BY by attack strength),
  * only by probing, which is what those two techniques already do.
+ *
+ * <p>It also carried a {@code dynamicContentVariance}, for an adaptive comparison threshold. That
+ * was deleted rather than wired, because it was not a variance: it was derived from a single
+ * response's length and whether it echoed the value, whereas measuring how much a page's content
+ * moves takes two or more samples of the <em>same</em> request (commonlib's {@code
+ * ComparableResponse.measureResponseVariance}, which needs a list). Guessing one number from one
+ * response and then loosening a detection threshold on it would trade real findings for imaginary
+ * ones. A page whose answers move has to be measured as such, by sending it twice.
  */
 public class ParameterContext {
 
@@ -42,19 +50,15 @@ public class ParameterContext {
      */
     public final boolean baselineIsNonNormalResponse;
 
-    public final float dynamicContentVariance;
-
     public ParameterContext(
             boolean isNumericContext,
             boolean isStringLiteralContext,
             boolean baselineContainsErrorSignature,
-            boolean baselineIsNonNormalResponse,
-            float dynamicContentVariance) {
+            boolean baselineIsNonNormalResponse) {
         this.isNumericContext = isNumericContext;
         this.isStringLiteralContext = isStringLiteralContext;
         this.baselineContainsErrorSignature = baselineContainsErrorSignature;
         this.baselineIsNonNormalResponse = baselineIsNonNormalResponse;
-        this.dynamicContentVariance = dynamicContentVariance;
     }
 
     /** Estimates probability of success for each strategy, 0.0–1.0. */
