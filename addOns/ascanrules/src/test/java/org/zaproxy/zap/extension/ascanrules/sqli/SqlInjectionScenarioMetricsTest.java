@@ -29,6 +29,7 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome;
@@ -43,26 +44,53 @@ import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome;
  * <p>The table is the artifact a change is compared against, kept one row per change in {@code
  * sqli-plan.md}.
  *
+ * <p>Each row is scanned twice: once cold, which is what a user scanning a site for the first time
+ * sees, and once more with the presence prior the first scan recorded. Both counts are reported,
+ * because the prior can only show itself on the second one.
+ *
  * <p>It deliberately does not assert on the outcomes: whether a scenario alerts is already held by
  * {@link SqlInjectionScenarioCorpusTest}, one test per scenario, and asserting it again here would
  * only add a second failure for the same regression. What it does assert is that the corpus can
  * still produce meaningful numbers — at least one injectable and one non-injectable row, and no
  * duplicate ids — because without those, "coverage 100%" could just mean every row was deleted.
  *
- * <p>Attribution is per scenario, not per technique: alerts do not record which technique raised
- * them, so a per-technique number needs that recorded first.
+ * <p>Attribution is per technique as well as per scenario: the rule records what each technique
+ * spent on the request it last scanned, so a row shows both the total and which techniques paid for
+ * it. That is what makes a change to the order techniques run in measurable -- a reordering that
+ * costs the same requests but finds the same thing is not a change anyone needs, and a reordering
+ * that costs more to find the same thing is a regression.
+ *
+ * <p>The one outcome it does assert is not a scenario label but the prior's own contract: a row
+ * scanned again with a warm presence prior must find exactly what the cold scan found. That holds
+ * for every row, injectable or not, and it is the guard on the one thing technique reordering is
+ * allowed to change -- the order, never what gets found.
  */
 class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRuleTest {
 
     /** What one scenario cost and produced, at the default attack strength. */
     private record ScenarioResult(
-            String id, Outcome outcome, int alerts, int requests, String summary) {
+            String id,
+            Outcome outcome,
+            int alerts,
+            int requests,
+            int repeatRequests,
+            String summary,
+            Map<String, Integer> byTechnique) {
 
         @Override
         public String toString() {
             return String.format(
-                    "  %-30s %-10s alerts=%d requests=%-4d %s",
-                    id, outcome, alerts, requests, summary);
+                    "  %-30s %-10s alerts=%d requests=%-4d repeat=%-4d %-40s %s",
+                    id, outcome, alerts, requests, repeatRequests, summary, techniqueSpend());
+        }
+
+        /** The per-technique breakdown, in a stable order so two runs are comparable by eye. */
+        private String techniqueSpend() {
+            return byTechnique.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                    .reduce((left, right) -> left + " " + right)
+                    .orElse("");
         }
     }
 
@@ -90,12 +118,30 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
 
         rule.scan();
 
+        int requests = httpMessagesSent.size();
+        int alerts = alertsRaised.size();
+        String summary = alertSummary();
+        Map<String, Integer> byTechnique = rule.getTechniqueRequests();
+
+        // The same request scanned again, with whatever the first scan recorded now in the prior.
+        // A cold scan cannot show what the prior is for -- it has no records to read -- so the
+        // repeat column is the measurement of it, and it must find the same thing for less.
+        rule.init(scenarioRequest(scenario), parent);
+        rule.scan();
+        int repeatRequests = httpMessagesSent.size() - requests;
+        assertThat(
+                scenario.id() + " must find exactly what the cold scan found, prior or not",
+                alertsRaised.size() - alerts,
+                is(alerts));
+
         return new ScenarioResult(
                 scenario.id(),
                 scenario.outcome(),
-                alertsRaised.size(),
-                httpMessagesSent.size(),
-                alertSummary());
+                alerts,
+                requests,
+                repeatRequests,
+                summary,
+                byTechnique);
     }
 
     /** A short description of the alert, so a surprising row can be diagnosed from the table. */
@@ -189,6 +235,11 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
         out.printf(
                 "requests/row:     mean %.1f  min %d  max %d%n",
                 average(totalRequests, results.size()), fewestRequests, mostRequests);
+        out.printf(
+                "repeat visits:    mean %.1f  (same request, prior warm; a warm prior must cost no more)%n",
+                average(
+                        results.stream().mapToInt(ScenarioResult::repeatRequests).sum(),
+                        results.size()));
         out.printf("alerts/row:       mean %.2f%n", average(totalAlerts, results.size()));
         out.println("per scenario:");
         results.forEach(out::println);

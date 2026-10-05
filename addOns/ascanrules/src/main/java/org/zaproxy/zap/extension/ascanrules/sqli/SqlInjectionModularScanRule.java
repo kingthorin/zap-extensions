@@ -20,10 +20,12 @@
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.commons.httpclient.URI;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.parosproxy.paros.Constant;
@@ -31,6 +33,7 @@ import org.parosproxy.paros.core.scanner.AbstractAppParamPlugin;
 import org.parosproxy.paros.core.scanner.AbstractPlugin.AlertBuilder;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.core.scanner.Category;
+import org.parosproxy.paros.core.scanner.Kb;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.addon.commonlib.CommonAlertTag;
 import org.zaproxy.addon.commonlib.PolicyTag;
@@ -61,6 +64,15 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
 
     private static final String MESSAGE_PREFIX = "ascanrules.sqlinjectionmodular.";
     private static final Logger LOGGER = LogManager.getLogger(SqlInjectionModularScanRule.class);
+
+    /**
+     * Version stamp on the presence records this rule writes to the knowledge base.
+     *
+     * <p>The knowledge base is a write-once set with no removal, so the stamp is the only way to
+     * retire what an earlier format of this rule wrote: a record carrying any other stamp is
+     * ignored, which is what {@link #isCurrentRecord(String)} is asked about on every read.
+     */
+    private static final String KB_RECORD_VERSION = "v1";
 
     private static final Map<String, String> ALERT_TAGS;
 
@@ -124,8 +136,13 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     private String paramName;
     private String originalValue;
     private String currentTechnique = "";
-    private int remainingBudgetForTechnique = 0;
-    private int totalBudgetForParam = 0;
+
+    /**
+     * Requests spent by each technique on the request last scanned, so the cost of a technique
+     * order is measurable rather than argued about: the presence prior exists to spend the requests
+     * of the techniques that will not find anything last.
+     */
+    private final Map<String, Integer> techniqueRequests = new HashMap<>();
 
     private Map<String, Integer> techniqueBudgets;
     private ParameterContext parameterContext;
@@ -135,6 +152,10 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     @Override
     public void init() {
         initBudgets();
+        // Per request rather than per parameter: scan() is called once for each parameter of a
+        // request, and what each technique spent on the request as a whole is what the metrics
+        // runner reports.
+        techniqueRequests.clear();
     }
 
     private void initBudgets() {
@@ -207,6 +228,7 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
         this.paramName = param;
         this.originalValue = value;
 
+        URI uri = null;
         try {
             // One baseline per parameter, fetched here and shared by every technique: a technique
             // fetching its own copy only re-buys the same page, once per technique that compares
@@ -222,6 +244,10 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
             cachedControl = getNewMsg();
             setParameter(cachedControl, param, value + CONTROL_SUFFIX);
             super.sendAndReceive(cachedControl);
+
+            // Scope of the path-level presence records below: this request's URI without its query,
+            // which is what the knowledge base keys path-scoped entries on.
+            uri = getBaseMsg().getRequestHeader().getURI();
         } catch (IOException e) {
             LOGGER.debug(
                     "Failed to initialize parameter context for parameter [{}]: {}",
@@ -239,17 +265,20 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
             "ERROR", "BOOLEAN", "EXPRESSION", "ORDERBY", "UNION", "LOGINBYPASS"
         };
 
-        for (int i = 0; i < strategies.size(); i++) {
+        Integer[] order = techniqueOrder(uri, techniqueNames);
+
+        for (int index : order) {
             if (isStop()) {
                 return;
             }
 
-            DetectionStrategy strategy = strategies.get(i);
-            String technique = techniqueNames[i];
+            DetectionStrategy strategy = strategies.get(index);
+            String technique = techniqueNames[index];
             setCurrentTechnique(technique);
 
             try {
                 if (strategy.detect(this)) {
+                    recordPresence(uri, technique);
                     return;
                 }
             } catch (IOException e) {
@@ -260,6 +289,91 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
                         e.getMessage());
             }
         }
+    }
+
+    /**
+     * Orders the techniques by how likely each is to find this injection: one that has already
+     * found one for this parameter, or anywhere else on this host, goes first, and the rest fall
+     * back to the static priors in {@link ParameterContext#estimateProbabilityFor(String)}.
+     *
+     * <p>Reorder only, never skip. Every technique still runs, so a record that has gone stale --
+     * the injection was fixed, or the page was never injectable in the first place -- costs the
+     * requests of the techniques that come after it finding nothing, and never an injection going
+     * unreported.
+     *
+     * @param uri the request's URI, for the path-scoped records, or {@code null} if it has none
+     * @param techniqueNames the technique names, in declared order
+     * @return the indices of {@code techniqueNames}, most promising first
+     */
+    private Integer[] techniqueOrder(URI uri, String[] techniqueNames) {
+        Integer[] order = new Integer[techniqueNames.length];
+        float[] priors = new float[techniqueNames.length];
+        for (int i = 0; i < order.length; i++) {
+            order[i] = i;
+            try {
+                priors[i] = priorFor(uri, techniqueNames[i]);
+            } catch (IOException e) {
+                // A prior that cannot be read is no prior: the static one is the whole fallback.
+                LOGGER.debug("Failed to read the injection presence prior: {}", e.getMessage());
+                priors[i] = parameterContext.estimateProbabilityFor(techniqueNames[i]);
+            }
+        }
+        // Arrays.sort is stable, so techniques the prior does not separate keep the declared order.
+        Arrays.sort(order, (first, second) -> Float.compare(priors[second], priors[first]));
+        return order;
+    }
+
+    private float priorFor(URI uri, String technique) throws IOException {
+        if (hasPresenceRecord(uri, technique)) {
+            return 1.0f;
+        }
+        return parameterContext.estimateProbabilityFor(technique);
+    }
+
+    /**
+     * Tells whether the technique has already found an injection here, looking at this parameter on
+     * this path first and then at the host as a whole.
+     *
+     * @param uri the request's URI, for the path-scoped records, or {@code null} if it has none
+     * @param technique the technique name
+     * @return {@code true} if a current presence record covers the technique
+     * @throws IOException if a presence record could not be read
+     */
+    private boolean hasPresenceRecord(URI uri, String technique) throws IOException {
+        Kb kb = getKb();
+        if (uri != null && isCurrentRecord(kb.getString(uri, presenceKey(technique, paramName)))) {
+            return true;
+        }
+        return isCurrentRecord(kb.getString(techniqueKey(technique)));
+    }
+
+    /**
+     * Records that the technique found an injection, for this parameter on this path and for the
+     * host as a whole, so the next parameter scanned here -- and the next page on this host --
+     * starts with the technique that is known to work.
+     *
+     * @param uri the request's URI, for the path-scoped record, or {@code null} if it has none
+     * @param technique the technique that found the injection
+     * @throws IOException if the record could not be written
+     */
+    private void recordPresence(URI uri, String technique) throws IOException {
+        Kb kb = getKb();
+        if (uri != null) {
+            kb.add(uri, presenceKey(technique, paramName), KB_RECORD_VERSION);
+        }
+        kb.add(techniqueKey(technique), KB_RECORD_VERSION);
+    }
+
+    private static String presenceKey(String technique, String param) {
+        return "T=" + technique + "|p=" + param;
+    }
+
+    private static String techniqueKey(String technique) {
+        return "T=" + technique;
+    }
+
+    static boolean isCurrentRecord(String record) {
+        return KB_RECORD_VERSION.equals(record);
     }
 
     // -- ScanContext: thin delegation to the protected AbstractPlugin/AbstractAppParamPlugin
@@ -283,6 +397,7 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     @Override
     public void sendAndReceive(HttpMessage message) throws IOException {
         super.sendAndReceive(message);
+        techniqueRequests.merge(currentTechnique, 1, Integer::sum);
         if (techniqueBudgets != null && techniqueBudgets.containsKey(currentTechnique)) {
             int current = techniqueBudgets.get(currentTechnique);
             if (current > 0) {
@@ -299,6 +414,17 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     @Override
     public boolean isStopped() {
         return isStop();
+    }
+
+    /**
+     * Returns what each technique spent on the request that was scanned last, keyed by technique
+     * name, summed over every parameter of that request. The baseline and control messages, fetched
+     * once per parameter, are not charged to a technique and are not counted here.
+     *
+     * @return an unmodifiable map of technique name to the requests it sent
+     */
+    public Map<String, Integer> getTechniqueRequests() {
+        return Map.copyOf(techniqueRequests);
     }
 
     @Override
