@@ -19,14 +19,21 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
-/** Analysis hints for a parameter, guiding payload selection and strategy ordering. */
+/**
+ * Analysis hints for a parameter, guiding payload selection and strategy ordering.
+ *
+ * <p>This used to carry three more flags — {@code isLikeContext}, {@code isOrderByContext} and
+ * {@code isExpressionContext} — hard-coded {@code false}. They were removed rather than derived,
+ * because nothing read them and nothing could derive them soundly: an arithmetic context is already
+ * established where it matters, by {@code ExpressionBasedDetectionStrategy} parsing the value
+ * itself, and a LIKE or ORDER BY context cannot be read off the request at all (rule 40018 does not
+ * try either — it sends LIKE payloads unconditionally and enables ORDER BY by attack strength),
+ * only by probing, which is what those two techniques already do.
+ */
 public class ParameterContext {
 
     public final boolean isNumericContext;
     public final boolean isStringLiteralContext;
-    public final boolean isLikeContext;
-    public final boolean isOrderByContext;
-    public final boolean isExpressionContext;
     public final boolean baselineContainsErrorSignature;
 
     /**
@@ -40,17 +47,11 @@ public class ParameterContext {
     public ParameterContext(
             boolean isNumericContext,
             boolean isStringLiteralContext,
-            boolean isLikeContext,
-            boolean isOrderByContext,
-            boolean isExpressionContext,
             boolean baselineContainsErrorSignature,
             boolean baselineIsNonNormalResponse,
             float dynamicContentVariance) {
         this.isNumericContext = isNumericContext;
         this.isStringLiteralContext = isStringLiteralContext;
-        this.isLikeContext = isLikeContext;
-        this.isOrderByContext = isOrderByContext;
-        this.isExpressionContext = isExpressionContext;
         this.baselineContainsErrorSignature = baselineContainsErrorSignature;
         this.baselineIsNonNormalResponse = baselineIsNonNormalResponse;
         this.dynamicContentVariance = dynamicContentVariance;
@@ -62,7 +63,7 @@ public class ParameterContext {
             case "ERROR" -> isStringLiteralContext ? 0.85f : (isNumericContext ? 0.7f : 0.75f);
             case "BOOLEAN" -> 0.8f;
             case "EXPRESSION" -> isNumericContext ? 0.85f : 0.5f;
-            case "ORDERBY" -> isOrderByContext ? 0.8f : 0.6f;
+            case "ORDERBY" -> 0.6f; // no order-by context is known, so take the conservative prior
             case "UNION" -> 0.7f;
             default -> 0.5f;
         };

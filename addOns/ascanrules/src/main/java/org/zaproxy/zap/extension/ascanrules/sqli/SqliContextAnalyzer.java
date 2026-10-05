@@ -41,9 +41,6 @@ public class SqliContextAnalyzer {
 
         boolean isNumericContext = NUMERIC_VALUE.matcher(originalValue).matches();
         boolean isStringLiteralContext = !isNumericContext;
-        boolean isLikeContext = false;
-        boolean isOrderByContext = false;
-        boolean isExpressionContext = false;
         boolean baselineContainsErrorSignature =
                 DbErrorSignatures.identify(responseBody).isPresent();
 
@@ -62,9 +59,6 @@ public class SqliContextAnalyzer {
         return new ParameterContext(
                 isNumericContext,
                 isStringLiteralContext,
-                isLikeContext,
-                isOrderByContext,
-                isExpressionContext,
                 baselineContainsErrorSignature,
                 baselineIsNonNormalResponse,
                 dynamicContentVariance);
