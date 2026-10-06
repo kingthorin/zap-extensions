@@ -115,4 +115,35 @@ public interface ScanContext {
      * for false-positive validation.
      */
     HttpMessage getCachedControl();
+
+    /**
+     * The baseline request sent again, fetched on first use and cached for the rest of the
+     * parameter. Comparing it against the baseline tells volatile content (timestamps, counters,
+     * tokens) from a genuine outcome change, which is what lets a strategy keep working on a page
+     * whose body moves on every request.
+     *
+     * <p>Charged to the technique whose strategy asks for it, the way any other probe is: the
+     * technique's budget pays for it and it shows up in that technique's request count. Callers
+     * must check their budget first, exactly as they do before sending a probe of their own.
+     *
+     * @return the replay of the baseline for the parameter under test
+     * @throws IOException if the replay cannot be sent
+     */
+    HttpMessage getRepeatedBaseline() throws IOException;
+
+    /**
+     * Records that a probe response matched the baseline — the first gate every differential
+     * technique must pass before it can raise an alert. Counted per request so the metrics runner
+     * can report how close a non-injectable row came to alerting: rows that pass this gate without
+     * alerting are the ones a noisy page would have to fool to produce a false positive.
+     */
+    void recordBaselineMatch();
+
+    /**
+     * Records a differential that would have alerted but was not raised, because the difference was
+     * explained by the probe answering with an error status (rate limited, WAF, timeout). These are
+     * the closest near misses a scan has, and the count is reported alongside {@link
+     * #recordBaselineMatch()}.
+     */
+    void recordSuppressedDifferential();
 }

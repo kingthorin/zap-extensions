@@ -110,6 +110,7 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         if (!variant1MatchesBaseline) {
             return false; // First variant doesn't match baseline, not a valid expression test
         }
+        context.recordBaselineMatch();
 
         // Test second variant
         HttpMessage msg2 = context.newMessage();
@@ -122,15 +123,19 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         boolean variant2DiffersFromVariant1 =
                 !comparator.matchesExactlyAfterStripping(
                         msg1, originalValue, variant1, msg2, originalValue, variant2);
+        boolean wouldAlert = variant2DiffersFromBaseline && variant2DiffersFromVariant1;
 
         // An error page for the confirming expression alone -- e.g. a parameter cast to an integer,
         // where the confirming expression resolves to a non-existent id -- is not a difference in
         // results, so it does not alert.
         if (comparator.isDifferenceExplainedByErrorStatus(baselineMsg, msg2)) {
+            if (wouldAlert) {
+                context.recordSuppressedDifferential();
+            }
             return false;
         }
 
-        if (variant2DiffersFromBaseline && variant2DiffersFromVariant1) {
+        if (wouldAlert) {
             // Expressions are being evaluated: baseline = variant1 but both differ from variant2
             context.newAlert()
                     .setConfidence(Alert.CONFIDENCE_MEDIUM)

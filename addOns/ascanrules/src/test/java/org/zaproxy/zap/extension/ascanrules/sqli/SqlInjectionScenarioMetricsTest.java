@@ -75,13 +75,22 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
             int requests,
             int repeatRequests,
             String summary,
-            Map<String, Integer> byTechnique) {
+            Map<String, Integer> byTechnique,
+            int baselineMatches,
+            int suppressed) {
 
         @Override
         public String toString() {
             return String.format(
-                    "  %-30s %-10s alerts=%d requests=%-4d repeat=%-4d %-40s %s",
-                    id, outcome, alerts, requests, repeatRequests, summary, techniqueSpend());
+                    "  %-30s %-10s alerts=%d requests=%-4d repeat=%-4d %-40s %s%s",
+                    id,
+                    outcome,
+                    alerts,
+                    requests,
+                    repeatRequests,
+                    summary,
+                    techniqueSpend(),
+                    nearMiss());
         }
 
         /** The per-technique breakdown, in a stable order so two runs are comparable by eye. */
@@ -91,6 +100,19 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
                     .map(entry -> entry.getKey() + "=" + entry.getValue())
                     .reduce((left, right) -> left + " " + right)
                     .orElse("");
+        }
+
+        /**
+         * The differential gates the scan passed without alerting. On a row with no alerts these
+         * are the near misses — the first half of the differential fired and only the second half
+         * held it back, which is what a noisy page would have to fool to produce a false positive.
+         * On an alerting row a non-zero match count is simply the gate the alert went through.
+         */
+        private String nearMiss() {
+            if (baselineMatches == 0 && suppressed == 0) {
+                return "";
+            }
+            return String.format(" nearMiss(match=%d suppressed=%d)", baselineMatches, suppressed);
         }
     }
 
@@ -122,6 +144,8 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
         int alerts = alertsRaised.size();
         String summary = alertSummary();
         Map<String, Integer> byTechnique = rule.getTechniqueRequests();
+        int baselineMatches = rule.getBaselineMatchCount();
+        int suppressed = rule.getSuppressedDifferentialCount();
 
         // The same request scanned again, with whatever the first scan recorded now in the prior.
         // A cold scan cannot show what the prior is for -- it has no records to read -- so the
@@ -141,7 +165,9 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
                 requests,
                 repeatRequests,
                 summary,
-                byTechnique);
+                byTechnique,
+                baselineMatches,
+                suppressed);
     }
 
     /** A short description of the alert, so a surprising row can be diagnosed from the table. */

@@ -144,10 +144,21 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
      */
     private final Map<String, Integer> techniqueRequests = new HashMap<>();
 
+    /**
+     * Near-miss attribution, cleared with {@link #techniqueRequests}: how many times a probe
+     * matched the baseline (the gate before any alert) and how many would-have-alerted
+     * differentials the error-status guard suppressed. Reported by the metrics runner so a zero in
+     * the false-positive column has something behind it.
+     */
+    private int baselineMatches;
+
+    private int suppressedDifferentials;
+
     private Map<String, Integer> techniqueBudgets;
     private ParameterContext parameterContext;
     private HttpMessage cachedBaseline;
     private HttpMessage cachedControl;
+    private HttpMessage cachedRepeat;
 
     @Override
     public void init() {
@@ -156,6 +167,8 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
         // request, and what each technique spent on the request as a whole is what the metrics
         // runner reports.
         techniqueRequests.clear();
+        baselineMatches = 0;
+        suppressedDifferentials = 0;
     }
 
     private void initBudgets() {
@@ -240,6 +253,9 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
             setParameter(cachedBaseline, param, value);
             super.sendAndReceive(cachedBaseline);
             parameterContext = SqliContextAnalyzer.analyze(value, cachedBaseline);
+            // A replay is only meaningful for this parameter's own baseline; the previous
+            // parameter's must not be reused.
+            cachedRepeat = null;
 
             cachedControl = getNewMsg();
             setParameter(cachedControl, param, value + CONTROL_SUFFIX);
@@ -513,5 +529,50 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     @Override
     public HttpMessage getCachedControl() {
         return cachedControl;
+    }
+
+    @Override
+    public HttpMessage getRepeatedBaseline() throws IOException {
+        if (cachedRepeat == null) {
+            cachedRepeat = getNewMsg();
+            setParameter(cachedRepeat, paramName, originalValue);
+            // Through the overridden sendAndReceive, so the replay is charged to the technique
+            // that asked for it rather than sitting outside every budget like the baseline and
+            // control do.
+            sendAndReceive(cachedRepeat);
+        }
+        return cachedRepeat;
+    }
+
+    @Override
+    public void recordBaselineMatch() {
+        baselineMatches++;
+    }
+
+    @Override
+    public void recordSuppressedDifferential() {
+        suppressedDifferentials++;
+    }
+
+    /**
+     * How many probes matched the baseline on the request scanned last — the gate every
+     * differential technique passes before it can alert, summed over every parameter of the
+     * request. A non-injectable row with a non-zero count is a near miss: the differential got its
+     * first half and the alert was stopped only by the second.
+     *
+     * @return the number of baseline matches recorded
+     */
+    public int getBaselineMatchCount() {
+        return baselineMatches;
+    }
+
+    /**
+     * How many would-have-alerted differentials the error-status guard suppressed on the request
+     * scanned last (rate limited, WAF, timed out), summed over every parameter of the request.
+     *
+     * @return the number of suppressed differentials recorded
+     */
+    public int getSuppressedDifferentialCount() {
+        return suppressedDifferentials;
     }
 }

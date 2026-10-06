@@ -23,6 +23,7 @@ import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.zaproxy.zap.testutils.RequestCondition.param;
@@ -120,6 +121,11 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
         rule.scan();
 
         assertThat(alertsRaised, is(empty()));
+        // The near-miss telemetry has to show these runs: a probe matched the baseline (the first
+        // gate), and the would-have-alerted differential was stopped only by the error-status
+        // guard — suppressed=0 here would mean the test's gate never fired.
+        assertThat(rule.getBaselineMatchCount(), is(greaterThan(0)));
+        assertThat(rule.getSuppressedDifferentialCount(), is(greaterThan(0)));
     }
 
     private static UrlParamValueHandler errorPageOnFalseConditionHandler(

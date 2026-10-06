@@ -80,6 +80,7 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
             // ASC doesn't match baseline — injection unlikely, bail early
             return false;
         }
+        context.recordBaselineMatch();
 
         if (budget < 2) {
             // We matched, but no budget left for DESC confirmation
@@ -150,6 +151,7 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         if (!validMatchesBaseline) {
             return false;
         }
+        context.recordBaselineMatch();
 
         String invalidValue = originalValue + OUT_OF_RANGE_INDEX_PAYLOAD;
         HttpMessage invalidMsg = context.newMessage();

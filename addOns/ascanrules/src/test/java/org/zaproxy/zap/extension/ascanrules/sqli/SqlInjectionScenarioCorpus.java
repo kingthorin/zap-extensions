@@ -19,6 +19,7 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
+import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
 import static org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome.BLIND;
 import static org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome.FP_PRONE;
 import static org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome.INJECTABLE;
@@ -26,9 +27,12 @@ import static org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Out
 import static org.zaproxy.zap.testutils.RequestCondition.formParam;
 import static org.zaproxy.zap.testutils.RequestCondition.param;
 
+import fi.iki.elonen.NanoHTTPD;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.zaproxy.zap.testutils.NanoServerHandler;
 import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
 /**
@@ -73,6 +77,7 @@ public final class SqlInjectionScenarioCorpus {
                 rateLimitedFalseCondition(),
                 wafForbiddenOnPayload(),
                 intCastPageIds(),
+                volatilePageBooleanInjection(),
                 wordpressTaxQuery(),
                 wordPressSearchOrderBy(),
                 blindDateFilter());
@@ -249,6 +254,52 @@ public final class SqlInjectionScenarioCorpus {
      * A search page echoing whatever it is given and never changing its result set: the safe
      * counterpart of the rows below, and the row that catches a guard filtering too much.
      */
+    /**
+     * A real injection on a page whose body changes on every request -- the volatile case, and the
+     * one a fixed comparison threshold cannot serve. The baseline and the true condition differ by
+     * the page's own moving content rather than by the query, so "the true condition reproduces the
+     * baseline" never holds byte for byte and a diff-based technique has nothing to compare.
+     *
+     * <p>This is the row that makes Step 5.1 measurable. Without an injectable volatile row the
+     * corpus's only volatile rows are the three false-positive-prone ones, which already sit at
+     * zero false positives, so the step's own acceptance gate ("FP down on volatile rows with no FN
+     * regression") describes a number that cannot move.
+     */
+    private static SqlInjectionScenario volatilePageBooleanInjection() {
+        return new SqlInjectionScenario(
+                "volatile-page-boolean-injection",
+                INJECTABLE,
+                "WAVSEP-style injection on a page with per-request dynamic content",
+                "/volatile?id=1",
+                "",
+                SqlInjectionScenarioCorpus::volatileBooleanPage);
+    }
+
+    /**
+     * A page that renders a different body on every request, so two identical requests never
+     * compare equal, and whose content depends on whether the parameter's condition resolves.
+     */
+    private static NanoServerHandler volatileBooleanPage() {
+        return new NanoServerHandler("/volatile") {
+            private final AtomicInteger renderCount = new AtomicInteger();
+
+            @Override
+            protected NanoHTTPD.Response serve(NanoHTTPD.IHTTPSession session) {
+                String value = getFirstParamValue(session, "id");
+                String body =
+                        isFalseCondition(value)
+                                ? "No matching row"
+                                : "Widget, size " + renderCount.incrementAndGet();
+                return newFixedLengthResponse(
+                        NanoHTTPD.Response.Status.OK, NanoHTTPD.MIME_HTML, body);
+            }
+        };
+    }
+
+    /**
+     * A search page echoing whatever it is given and never changing its result set: the safe
+     * counterpart of the rows below, and the row that catches a guard filtering too much.
+     */
     private static SqlInjectionScenario echoOnlySearch() {
         return new SqlInjectionScenario(
                 "echo-only-search",
@@ -352,10 +403,12 @@ public final class SqlInjectionScenarioCorpus {
      */
     public static boolean isFalseCondition(String value) {
         return value != null
-                && (value.contains("2>3")
+                && (value.contains("1=2")
+                        || value.contains("2>3")
                         || value.contains("BETWEEN 5 AND 6")
                         || value.contains("LIKE 'z%")
-                        || value.contains("IS NOT NULL"));
+                        || value.contains("IS NOT NULL")
+                        || value.contains("XYZABCDEFGHIJ"));
     }
 
     /** Whether the value looks like an injection attempt rather than a plain cache-buster value. */

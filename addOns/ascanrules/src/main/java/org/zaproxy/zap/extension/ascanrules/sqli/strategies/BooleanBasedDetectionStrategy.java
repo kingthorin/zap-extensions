@@ -56,6 +56,8 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
 
         HttpMessage baseline = context.getCachedBaseline();
         int used = 0;
+        ResponseComparator.VolatileTemplate template = null;
+        boolean templateAttempted = false;
 
         for (BooleanConditionPayloads.Condition condition :
                 BooleanConditionPayloads.conditionsFor(context.getAttackStrength())) {
@@ -79,9 +81,42 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
                             trueValue);
 
             if (!trueMatchesBaseline) {
+                // A same-status body mismatch is the signature of a volatile page. Learn its
+                // noise once per parameter — one replay of the baseline, inside the budget — and
+                // hold everything except the learned noise to the same exact standard. A page
+                // that cannot be templated safely stays on the exact comparison.
+                if (!templateAttempted
+                        && baseline.getResponseHeader().getStatusCode()
+                                == trueMsg.getResponseHeader().getStatusCode()
+                        && used + 1 <= budget) {
+                    templateAttempted = true;
+                    template =
+                            comparator.deriveVolatileTemplate(
+                                    baseline,
+                                    originalValue,
+                                    originalValue,
+                                    context.getRepeatedBaseline(),
+                                    originalValue,
+                                    originalValue);
+                    used++;
+                    trueMatchesBaseline =
+                            template != null
+                                    && comparator.matchesTemplate(
+                                            template,
+                                            baseline,
+                                            originalValue,
+                                            originalValue,
+                                            trueMsg,
+                                            originalValue,
+                                            trueValue);
+                }
+            }
+
+            if (!trueMatchesBaseline) {
                 // AND_TRUE didn't match baseline, try next payload pair
                 continue;
             }
+            context.recordBaselineMatch();
 
             // AND_TRUE matches baseline; now test AND_FALSE
             if (used + 1 > budget) {
@@ -95,33 +130,44 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
             used++;
 
             boolean falseDiffersFromBaseline =
-                    !comparator.matchesExactlyAfterStripping(
-                            baseline,
-                            originalValue,
-                            originalValue,
-                            falseMsg,
-                            originalValue,
-                            falseValue);
+                    template != null
+                            ? !comparator.matchesTemplate(
+                                    template,
+                                    baseline,
+                                    originalValue,
+                                    originalValue,
+                                    falseMsg,
+                                    originalValue,
+                                    falseValue)
+                            : !comparator.matchesExactlyAfterStripping(
+                                    baseline,
+                                    originalValue,
+                                    originalValue,
+                                    falseMsg,
+                                    originalValue,
+                                    falseValue);
 
-            if (falseDiffersFromBaseline
-                    && !comparator.isDifferenceExplainedByErrorStatus(baseline, falseMsg)) {
-                // AND_TRUE~baseline AND AND_FALSE!=baseline: injectable. Alert.
-                // An error page for AND_FALSE alone -- rate limited, blocked by a WAF, timed out --
-                // is not a difference in results, so it does not alert.
-                context.newAlert()
-                        .setConfidence(Alert.CONFIDENCE_MEDIUM)
-                        .setParam(context.getParamName())
-                        .setAttack(trueValue)
-                        .setOtherInfo(
-                                "Page results were successfully manipulated using the boolean"
-                                        + " conditions ["
-                                        + trueValue
-                                        + "] and ["
-                                        + falseValue
-                                        + "]")
-                        .setMessage(trueMsg)
-                        .raise();
-                return true;
+            if (falseDiffersFromBaseline) {
+                if (!comparator.isDifferenceExplainedByErrorStatus(baseline, falseMsg)) {
+                    // AND_TRUE~baseline AND AND_FALSE!=baseline: injectable. Alert.
+                    // An error page for AND_FALSE alone -- rate limited, blocked by a WAF, timed
+                    // out -- is not a difference in results, so it does not alert.
+                    context.newAlert()
+                            .setConfidence(Alert.CONFIDENCE_MEDIUM)
+                            .setParam(context.getParamName())
+                            .setAttack(trueValue)
+                            .setOtherInfo(
+                                    "Page results were successfully manipulated using the boolean"
+                                            + " conditions ["
+                                            + trueValue
+                                            + "] and ["
+                                            + falseValue
+                                            + "]")
+                            .setMessage(trueMsg)
+                            .raise();
+                    return true;
+                }
+                context.recordSuppressedDifferential();
             }
 
             // AND_FALSE also matches baseline; no differential detected — try next pair
