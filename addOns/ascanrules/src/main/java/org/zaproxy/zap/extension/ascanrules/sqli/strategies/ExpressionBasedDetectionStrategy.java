@@ -54,7 +54,7 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
 
         // Baseline fetched once for this parameter by the rule
         HttpMessage baselineMsg = context.getCachedBaseline();
-        int used = 0;
+        TemplateSlot slot = new TemplateSlot();
 
         // Try ADD variant: if param is 1, try "3-2" and "4-2"
         try {
@@ -64,15 +64,21 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
             String addVariant1 = String.valueOf(paramPlusTwo) + "-2";
             String addVariant2 = String.valueOf(paramPlusThree) + "-2";
 
-            if (used + 2 <= budget
+            if (2 <= budget
                     && testExpressionVariant(
-                            context, baselineMsg, originalValue, addVariant1, addVariant2)) {
+                            context,
+                            baselineMsg,
+                            originalValue,
+                            addVariant1,
+                            addVariant2,
+                            budget,
+                            0,
+                            slot)) {
                 return true;
             }
-            used += 2;
 
             // Try MULT variant: if param is 1, try "2/2" and "4/2"
-            if (used + 2 <= budget) {
+            if (4 <= budget) {
                 int paramMultTwo = Math.multiplyExact(paramAsInt, 2);
                 int paramMultFour = Math.multiplyExact(paramAsInt, 4);
 
@@ -80,7 +86,14 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
                 String multVariant2 = String.valueOf(paramMultFour) + "/2";
 
                 if (testExpressionVariant(
-                        context, baselineMsg, originalValue, multVariant1, multVariant2)) {
+                        context,
+                        baselineMsg,
+                        originalValue,
+                        multVariant1,
+                        multVariant2,
+                        budget,
+                        2,
+                        slot)) {
                     return true;
                 }
             }
@@ -91,21 +104,83 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         return false;
     }
 
+    /**
+     * Lazily-learned volatile template, shared by both variant calls of one parameter. Null
+     * template means the exact-comparison path, unchanged.
+     */
+    private static final class TemplateSlot {
+        boolean attempted;
+        ResponseComparator.VolatileTemplate template;
+    }
+
+    /**
+     * Learns a volatile-content template from one baseline replay, charged to this technique's
+     * budget. Shared seam with the boolean strategy's learner: the derivation is strategy-agnostic
+     * (baseline vs its own replay), so the wiring is one lazy fetch behind a budget check. Null
+     * (give-up, budget, or a failed replay) means the exact-comparison path, unchanged.
+     */
+    private ResponseComparator.VolatileTemplate learnVolatileTemplate(
+            ScanContext context,
+            HttpMessage baselineMsg,
+            String originalValue,
+            int budget,
+            int used)
+            throws IOException {
+        if (used + 1 > budget) {
+            return null;
+        }
+        HttpMessage replay = context.getRepeatedBaseline();
+        if (replay.getResponseHeader().getStatusCode()
+                != baselineMsg.getResponseHeader().getStatusCode()) {
+            return null;
+        }
+        return comparator.deriveVolatileTemplate(
+                baselineMsg, originalValue, originalValue, replay, originalValue, originalValue);
+    }
+
     private boolean testExpressionVariant(
             ScanContext context,
             HttpMessage baselineMsg,
             String originalValue,
             String variant1,
-            String variant2)
+            String variant2,
+            int budget,
+            int used,
+            TemplateSlot slot)
             throws IOException {
         // Test first variant
         HttpMessage msg1 = context.newMessage();
         context.setParam(msg1, variant1);
         context.sendAndReceive(msg1);
+        used++;
 
         boolean variant1MatchesBaseline =
                 comparator.matchesExactlyAfterStripping(
                         baselineMsg, originalValue, originalValue, msg1, originalValue, variant1);
+
+        if (!variant1MatchesBaseline && !slot.attempted) {
+            // First variant differs: either the page is volatile or the expression is not
+            // evaluated. One replay tells them apart — but only with same-status pages and
+            // spare budget, exactly the boolean learner's discipline.
+            slot.attempted = true;
+            if (msg1.getResponseHeader().getStatusCode()
+                    == baselineMsg.getResponseHeader().getStatusCode()) {
+                slot.template =
+                        learnVolatileTemplate(context, baselineMsg, originalValue, budget, used);
+                used++;
+                if (slot.template != null) {
+                    variant1MatchesBaseline =
+                            comparator.matchesTemplate(
+                                    slot.template,
+                                    baselineMsg,
+                                    originalValue,
+                                    originalValue,
+                                    msg1,
+                                    originalValue,
+                                    variant1);
+                }
+            }
+        }
 
         if (!variant1MatchesBaseline) {
             return false; // First variant doesn't match baseline, not a valid expression test
@@ -117,12 +192,38 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         context.setParam(msg2, variant2);
         context.sendAndReceive(msg2);
 
-        boolean variant2DiffersFromBaseline =
-                !comparator.matchesExactlyAfterStripping(
-                        baselineMsg, originalValue, originalValue, msg2, originalValue, variant2);
-        boolean variant2DiffersFromVariant1 =
-                !comparator.matchesExactlyAfterStripping(
-                        msg1, originalValue, variant1, msg2, originalValue, variant2);
+        boolean variant2DiffersFromBaseline;
+        boolean variant2DiffersFromVariant1;
+        if (slot.template != null) {
+            // ponytail: variant2-vs-variant1 under a template is approximated as
+            // "variant1-in minus variant2-out" rather than a template derived from msg1,
+            // because deriving a second template costs another replay. Sound for the
+            // alert direction (IN variants only differ by their arithmetic value), and
+            // a template miss on variant2 fails closed to "no alert".
+            boolean variant2MatchesBaseline =
+                    comparator.matchesTemplate(
+                            slot.template,
+                            baselineMsg,
+                            originalValue,
+                            originalValue,
+                            msg2,
+                            originalValue,
+                            variant2);
+            variant2DiffersFromBaseline = !variant2MatchesBaseline;
+            variant2DiffersFromVariant1 = !variant2MatchesBaseline;
+        } else {
+            variant2DiffersFromBaseline =
+                    !comparator.matchesExactlyAfterStripping(
+                            baselineMsg,
+                            originalValue,
+                            originalValue,
+                            msg2,
+                            originalValue,
+                            variant2);
+            variant2DiffersFromVariant1 =
+                    !comparator.matchesExactlyAfterStripping(
+                            msg1, originalValue, variant1, msg2, originalValue, variant2);
+        }
         boolean wouldAlert = variant2DiffersFromBaseline && variant2DiffersFromVariant1;
 
         // An error page for the confirming expression alone -- e.g. a parameter cast to an integer,

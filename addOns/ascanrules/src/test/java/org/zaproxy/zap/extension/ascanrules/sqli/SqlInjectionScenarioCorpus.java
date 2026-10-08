@@ -78,6 +78,8 @@ public final class SqlInjectionScenarioCorpus {
                 wafForbiddenOnPayload(),
                 intCastPageIds(),
                 volatilePageBooleanInjection(),
+                volatilePageExpressionInjection(),
+                volatilePageOrderByInjection(),
                 wordpressTaxQuery(),
                 wordPressSearchOrderBy(),
                 blindDateFilter());
@@ -297,9 +299,150 @@ public final class SqlInjectionScenarioCorpus {
     }
 
     /**
+     * A numeric page that evaluates arithmetic injections (item=3-2 resolves to row 1) while
+     * rotating a per-request counter line. Without the volatile template the expression strategy's
+     * first variant never matches the baseline, so the row is a false negative; with it the stable
+     * cells carry the signal. Boolean runs first and learns a template too, but finds no
+     * differential: AND-over-item=1 returns the row-1 page under every condition, true and false
+     * alike. Expression's arithmetic (3-2→row 1 vs 4-2→row 2) is what separates the output states.
+     */
+    private static NanoServerHandler volatileExpressionPage() {
+        return new NanoServerHandler("/catalog") {
+            private final AtomicInteger renderCount = new AtomicInteger();
+
+            @Override
+            protected NanoHTTPD.Response serve(NanoHTTPD.IHTTPSession session) {
+                String value = getFirstParamValue(session, "item");
+                String id = expressionId(value == null ? "1" : value);
+                String cells =
+                        EXISTING_IDS.contains(id)
+                                ? "<td>row " + id + ", price $10</td>"
+                                : "<td>no such item</td>";
+                String body =
+                        "<html><body><div>render "
+                                + renderCount.incrementAndGet()
+                                + "</div><table><tr>"
+                                + cells
+                                + "</tr></table></body></html>";
+                return newFixedLengthResponse(
+                        NanoHTTPD.Response.Status.OK, NanoHTTPD.MIME_HTML, body);
+            }
+        };
+    }
+
+    /**
+     * An ORDER BY position page that rotates a per-request counter line. {@code ASC} and a valid
+     * index preserve the natural row order while {@code DESC} reverses it and an out-of-range index
+     * errors — all of which the exact comparisons miss while every body carries a fresh counter.
+     */
+    private static NanoServerHandler volatileOrderByPage() {
+        return new NanoServerHandler("/listing") {
+            private final AtomicInteger renderCount = new AtomicInteger();
+
+            @Override
+            protected NanoHTTPD.Response serve(NanoHTTPD.IHTTPSession session) {
+                String value = getFirstParamValue(session, "sort");
+                String rows = orderByRows(value == null ? "1" : value);
+                String body =
+                        "<html><body><div>render "
+                                + renderCount.incrementAndGet()
+                                + "</div><table>"
+                                + rows
+                                + "</table></body></html>";
+                return newFixedLengthResponse(
+                        NanoHTTPD.Response.Status.OK, NanoHTTPD.MIME_HTML, body);
+            }
+        };
+    }
+
+    /**
      * A search page echoing whatever it is given and never changing its result set: the safe
      * counterpart of the rows below, and the row that catches a guard filtering too much.
      */
+    /**
+     * A numeric page that evaluates arithmetic injections (id=3-2 resolves to row 1) while rotating
+     * a per-request counter line. Without the volatile template the expression strategy's first
+     * variant never matches the baseline, so the row is a false negative; with it the stable cells
+     * carry the signal. Boolean runs first and learns a template too, but finds no differential:
+     * AND-over-id=1 returns the id=1 row under every condition, true and false alike. Expression's
+     * arithmetic (3-2→id 1 vs 4-2→id 2) is what separates the output states.
+     */
+    private static SqlInjectionScenario volatilePageExpressionInjection() {
+        return new SqlInjectionScenario(
+                "volatile-page-expression-injection",
+                INJECTABLE,
+                "Step 5.3: expression-strategy counterpart of volatile-page-boolean-injection",
+                "/catalog?item=1",
+                "",
+                SqlInjectionScenarioCorpus::volatileExpressionPage);
+    }
+
+    /**
+     * A numeric page that evaluates arithmetic injections (item=3-2 resolves to row 1) while
+     * rotating a per-request counter line. Without the volatile template the expression strategy's
+     * first variant never matches the baseline, so the row is a false negative; with it the stable
+     * cells carry the signal. Boolean runs first and learns a template too, but finds no
+     * differential: AND-over-item=1 returns the row-1 page under every condition, true and false
+     * alike. Expression's arithmetic (3-2→row 1 vs 4-2→row 2) is what separates the output states.
+     */
+    /**
+     * An ORDER BY position page that rotates a per-request counter line. {@code ASC} and a valid
+     * index preserve the natural row order while {@code DESC} reverses it and an out-of-range index
+     * errors — all of which the exact comparisons miss while every body carries a fresh counter.
+     */
+    private static SqlInjectionScenario volatilePageOrderByInjection() {
+        return new SqlInjectionScenario(
+                "volatile-page-order-by-injection",
+                BLIND,
+                "Step 5.3: order-by-strategy counterpart of volatile-page-boolean-injection; "
+                        + "also backlog row #4 (ORDER BY position param). BLIND, not INJECTABLE: "
+                        + "ORDERBY budget is 0 below HIGH (mirroring 40018), so the MEDIUM corpus "
+                        + "runner never reaches the strategy — the HIGH-strength unit test in "
+                        + "OrderByDetectionStrategyUnitTest proves the template wiring instead",
+                "/listing?sort=1",
+                "",
+                SqlInjectionScenarioCorpus::volatileOrderByPage);
+    }
+
+    /**
+     * The row id an application evaluating the {@code item} parameter as SQL arithmetic resolves:
+     * {@code 3-2} and {@code 2/2} select row 1, {@code 4-2} and {@code 4/2} row 2, a plain integer
+     * selects itself, and anything else selects nothing. Mirrors what the expression strategy sends
+     * (ADD pair {@code N+2-2}/{@code N+3-2}, MULT pair {@code 2N/2}/{@code 4N/2}).
+     */
+    private static String expressionId(String value) {
+        if (value == null) {
+            return "";
+        }
+        java.util.regex.Matcher arithmetic =
+                java.util.regex.Pattern.compile("^(\\d+)([-/])2$").matcher(value.trim());
+        if (arithmetic.matches()) {
+            int left = Integer.parseInt(arithmetic.group(1));
+            int id = "-".equals(arithmetic.group(2)) ? left - 2 : left / 2;
+            return String.valueOf(id);
+        }
+        return leadingDigits(value);
+    }
+
+    /**
+     * The table rows an application interpolating {@code sort} into {@code ORDER BY} renders:
+     * natural order for the baseline, {@code ASC}, and a valid index; reversed for {@code DESC}; an
+     * error cell for an out-of-range index; natural order otherwise (echoed payloads, boolean
+     * conditions, and arithmetic all leave ordering untouched, so the boolean and expression
+     * strategies find no differential here).
+     */
+    private static String orderByRows(String value) {
+        String upper = value == null ? "" : value.toUpperCase(Locale.ROOT);
+        String rows = "<tr><td>alpha</td></tr><tr><td>beta</td></tr>";
+        if (upper.contains("DESC")) {
+            return "<tr><td>beta</td></tr><tr><td>alpha</td></tr>";
+        }
+        if (upper.contains("ORDER BY 99")) {
+            return "<tr><td>unknown column</td></tr>";
+        }
+        return rows;
+    }
+
     private static SqlInjectionScenario echoOnlySearch() {
         return new SqlInjectionScenario(
                 "echo-only-search",

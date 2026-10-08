@@ -256,7 +256,7 @@ class SqlInjectionScenarioMetricsTest extends AbstractSqlInjectionModularScanRul
                 falsePositivesFpProne);
         out.printf("false negatives:  %d%n", injectable - truePositives);
         out.printf(
-                "known blind gaps: %d  (injectable, time-based only: no technique for it)%n",
+                "known blind gaps: %d  (BLIND rows: no technique for them at this strength)%n",
                 count(results, Outcome.BLIND));
         out.printf(
                 "requests/row:     mean %.1f  min %d  max %d%n",

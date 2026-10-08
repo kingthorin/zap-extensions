@@ -19,6 +19,7 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
+import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasSize;
@@ -63,6 +64,95 @@ class ExpressionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModul
         rule.scan();
 
         assertThat(alertsRaised, is(empty()));
+    }
+
+    @Test
+    void shouldAlertOnVolatilePageWhenTemplateAbsorbsCounter() throws Exception {
+        // Given: a numeric page evaluating arithmetic while rotating a per-request counter
+        // line. Without the template the first variant never matches the baseline (FN);
+        // with it the stable cells carry the ADD-pair differential (3-2→row 1 vs 4-2→row 2).
+        String path = "/sqli/expression/volatile/";
+        nano.addHandler(new VolatileExpressionHandler(path, "item"));
+        rule.init(getHttpMessage(path + "?item=1"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+    }
+
+    @Test
+    void shouldNotAlertOnVolatilePageWhenExpressionIsNotEvaluated() throws Exception {
+        // Given: a volatile page ignoring arithmetic — the counter moves but the row never
+        // does, so the template must absorb everything and stay silent.
+        String path = "/sqli/expression/volatile-static/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    private int render;
+
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        getFirstParamValue(session, "item");
+                        return newFixedLengthResponse(
+                                "<html><body><div>render "
+                                        + (render++)
+                                        + "</div><table><tr><td>row 1</td></tr></table>"
+                                        + "</body></html>");
+                    }
+                });
+        rule.init(getHttpMessage(path + "?item=1"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    /**
+     * A numeric page evaluating the {@code item} parameter as SQL arithmetic ({@code 3-2} and
+     * {@code 2/2} select row 1, {@code 4-2} and {@code 4/2} row 2, a plain integer selects itself)
+     * while rotating a per-request counter line.
+     */
+    private static class VolatileExpressionHandler extends NanoServerHandler {
+        private final String param;
+        private int render;
+
+        VolatileExpressionHandler(String path, String param) {
+            super(path);
+            this.param = param;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String value = getFirstParamValue(session, param);
+            String id = expressionId(value == null ? "1" : value);
+            String cells =
+                    EXISTING_IDS.contains(id)
+                            ? "<td>row " + id + ", price $10</td>"
+                            : "<td>no such item</td>";
+            return newFixedLengthResponse(
+                    "<html><body><div>render "
+                            + (render++)
+                            + "</div><table><tr>"
+                            + cells
+                            + "</tr></table></body></html>");
+        }
+
+        private static String expressionId(String value) {
+            java.util.regex.Matcher arithmetic =
+                    java.util.regex.Pattern.compile("^(\\d+)([-/])2$").matcher(value.trim());
+            if (arithmetic.matches()) {
+                int left = Integer.parseInt(arithmetic.group(1));
+                return String.valueOf("-".equals(arithmetic.group(2)) ? left - 2 : left / 2);
+            }
+            int end = 0;
+            while (end < value.length() && Character.isDigit(value.charAt(end))) {
+                end++;
+            }
+            return value.substring(0, end);
+        }
     }
 
     /**

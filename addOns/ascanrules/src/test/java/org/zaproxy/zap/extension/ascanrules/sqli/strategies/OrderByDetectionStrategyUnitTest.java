@@ -82,6 +82,40 @@ class OrderByDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRu
         assertThat(alertsRaised, is(empty()));
     }
 
+    @Test
+    void shouldAlertOnVolatilePageWhenTemplateAbsorbsCounter() throws Exception {
+        // Given: an ORDER BY position page rotating a per-request counter line. Exact
+        // comparisons never hold (every body differs), so without the volatile template
+        // this is a false negative; with it ASC matches and DESC differs.
+        String path = "/sqli/orderby/volatile/";
+        nano.addHandler(new VolatileOrderByHandler(path, "sort"));
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?sort=1"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(alertsRaised.get(0).getParam(), is(equalTo("sort")));
+    }
+
+    @Test
+    void shouldNotAlertOnVolatilePageWhenOrderByHasNoEffect() throws Exception {
+        // Given: a volatile page that ignores ORDER BY payloads — the counter moves but
+        // ordering never changes, so the template must absorb everything and stay silent.
+        String path = "/sqli/orderby/volatile-static/";
+        nano.addHandler(new VolatileStaticOrderByHandler(path, "sort"));
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?sort=1"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
     /**
      * Serves the same body for every value except an out-of-range ORDER BY index, which gets a
      * different fallback page. The body deliberately avoids SQL error text so the error-based
@@ -106,6 +140,63 @@ class OrderByDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRu
                 return newFixedLengthResponse(REJECTED_INDEX_VIEW);
             }
             return newFixedLengthResponse(DEFAULT_VIEW);
+        }
+    }
+
+    /**
+     * An ORDER BY position page rotating a per-request counter line: {@code ASC} and a valid index
+     * keep the natural order, {@code DESC} reverses it, an out-of-range index errors.
+     */
+    private static class VolatileOrderByHandler extends NanoServerHandler {
+
+        private final String param;
+        private int render;
+
+        VolatileOrderByHandler(String path, String param) {
+            super(path);
+            this.param = param;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String value = getFirstParamValue(session, param);
+            String upper = value == null ? "" : value.toUpperCase(java.util.Locale.ROOT);
+            String rows = "<tr><td>alpha</td></tr><tr><td>beta</td></tr>";
+            if (upper.contains("DESC")) {
+                rows = "<tr><td>beta</td></tr><tr><td>alpha</td></tr>";
+            } else if (upper.contains("ORDER BY 99")) {
+                rows = "<tr><td>unknown column</td></tr>";
+            }
+            return newFixedLengthResponse(
+                    "<html><body><div>render "
+                            + (render++)
+                            + "</div><table>"
+                            + rows
+                            + "</table></body></html>");
+        }
+    }
+
+    /**
+     * A volatile page that ignores ordering entirely: the counter moves every request but the rows
+     * never do, so a template that cries injection here is a false positive.
+     */
+    private static class VolatileStaticOrderByHandler extends NanoServerHandler {
+
+        private final String param;
+        private int render;
+
+        VolatileStaticOrderByHandler(String path, String param) {
+            super(path);
+            this.param = param;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            getFirstParamValue(session, param);
+            return newFixedLengthResponse(
+                    "<html><body><div>render "
+                            + (render++)
+                            + "</div><table><tr><td>alpha</td></tr></table></body></html>");
         }
     }
 }

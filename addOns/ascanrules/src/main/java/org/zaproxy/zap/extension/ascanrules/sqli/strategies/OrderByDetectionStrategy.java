@@ -76,6 +76,40 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
                 comparator.matchesExactlyAfterStripping(
                         baseline, originalValue, originalValue, ascMsg, originalValue, ascPayload);
 
+        // Volatile-page fallback: ASC differs either because the page moves on every
+        // request or because ordering is not controlled here. Same learner discipline as
+        // the boolean strategy: one replay, same status, spare budget (the replay rides
+        // the rule's cachedRepeat, so a template learned here is reused below).
+        ResponseComparator.VolatileTemplate template = null;
+        if (!ascMatchesBaseline
+                && ascMsg.getResponseHeader().getStatusCode()
+                        == baseline.getResponseHeader().getStatusCode()
+                && 1 + 1 <= budget) {
+            HttpMessage replay = context.getRepeatedBaseline();
+            if (replay.getResponseHeader().getStatusCode()
+                    == baseline.getResponseHeader().getStatusCode()) {
+                template =
+                        comparator.deriveVolatileTemplate(
+                                baseline,
+                                originalValue,
+                                originalValue,
+                                replay,
+                                originalValue,
+                                originalValue);
+                if (template != null) {
+                    ascMatchesBaseline =
+                            comparator.matchesTemplate(
+                                    template,
+                                    baseline,
+                                    originalValue,
+                                    originalValue,
+                                    ascMsg,
+                                    originalValue,
+                                    ascPayload);
+                }
+            }
+        }
+
         if (!ascMatchesBaseline) {
             // ASC doesn't match baseline — injection unlikely, bail early
             return false;
@@ -94,14 +128,24 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         context.sendAndReceive(descMsg);
 
         // Check if DESC differs from baseline
+        ResponseComparator.VolatileTemplate fixedTemplate = template;
         boolean descDiffersFromBaseline =
-                !comparator.matchesExactlyAfterStripping(
-                        baseline,
-                        originalValue,
-                        originalValue,
-                        descMsg,
-                        originalValue,
-                        descPayload);
+                fixedTemplate != null
+                        ? !comparator.matchesTemplate(
+                                fixedTemplate,
+                                baseline,
+                                originalValue,
+                                originalValue,
+                                descMsg,
+                                originalValue,
+                                descPayload)
+                        : !comparator.matchesExactlyAfterStripping(
+                                baseline,
+                                originalValue,
+                                originalValue,
+                                descMsg,
+                                originalValue,
+                                descPayload);
 
         if (descDiffersFromBaseline) {
             context.newAlert()
@@ -114,7 +158,7 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
             return true;
         }
 
-        return detectRejectedOrderByIndex(context, baseline, originalValue);
+        return detectRejectedOrderByIndex(context, baseline, originalValue, fixedTemplate);
     }
 
     /**
@@ -130,7 +174,11 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
      * @return true if an alert was raised
      */
     private boolean detectRejectedOrderByIndex(
-            ScanContext context, HttpMessage baseline, String originalValue) throws IOException {
+            ScanContext context,
+            HttpMessage baseline,
+            String originalValue,
+            ResponseComparator.VolatileTemplate template)
+            throws IOException {
         if (context.isStopped() || context.getRemainingBudget() < 2) {
             return false;
         }
@@ -141,13 +189,22 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         context.sendAndReceive(validMsg);
 
         boolean validMatchesBaseline =
-                comparator.matchesExactlyAfterStripping(
-                        baseline,
-                        originalValue,
-                        originalValue,
-                        validMsg,
-                        originalValue,
-                        validValue);
+                template != null
+                        ? comparator.matchesTemplate(
+                                template,
+                                baseline,
+                                originalValue,
+                                originalValue,
+                                validMsg,
+                                originalValue,
+                                validValue)
+                        : comparator.matchesExactlyAfterStripping(
+                                baseline,
+                                originalValue,
+                                originalValue,
+                                validMsg,
+                                originalValue,
+                                validValue);
         if (!validMatchesBaseline) {
             return false;
         }
@@ -159,13 +216,22 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         context.sendAndReceive(invalidMsg);
 
         boolean invalidDiffersFromBaseline =
-                !comparator.matchesExactlyAfterStripping(
-                        baseline,
-                        originalValue,
-                        originalValue,
-                        invalidMsg,
-                        originalValue,
-                        invalidValue);
+                template != null
+                        ? !comparator.matchesTemplate(
+                                template,
+                                baseline,
+                                originalValue,
+                                originalValue,
+                                invalidMsg,
+                                originalValue,
+                                invalidValue)
+                        : !comparator.matchesExactlyAfterStripping(
+                                baseline,
+                                originalValue,
+                                originalValue,
+                                invalidMsg,
+                                originalValue,
+                                invalidValue);
         if (!invalidDiffersFromBaseline) {
             return false;
         }
