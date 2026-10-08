@@ -80,6 +80,7 @@ public final class SqlInjectionScenarioCorpus {
                 volatilePageBooleanInjection(),
                 volatilePageExpressionInjection(),
                 volatilePageOrderByInjection(),
+                reflectingUnionInterpolation(),
                 wordpressTaxQuery(),
                 wordPressSearchOrderBy(),
                 blindDateFilter());
@@ -356,6 +357,55 @@ public final class SqlInjectionScenarioCorpus {
     }
 
     /**
+     * A page echoing whatever it is given — so every payload looks "handled", the echo-only false
+     * positive shape — that additionally renders the hash of an {@code md5('...')} argument, which
+     * is what a database interpolating the function into a UNION result set does.
+     */
+    private static NanoServerHandler reflectingUnionPage() {
+        return new NanoServerHandler("/search") {
+            @Override
+            protected NanoHTTPD.Response serve(NanoHTTPD.IHTTPSession session) {
+                String value = getFirstParamValue(session, "q");
+                String body =
+                        "<html><body><h1>Search</h1><p>You searched for: "
+                                + (value == null ? "" : value)
+                                + "</p>"
+                                + md5Result(value)
+                                + "</body></html>";
+                return newFixedLengthResponse(
+                        NanoHTTPD.Response.Status.OK, NanoHTTPD.MIME_HTML, body);
+            }
+        };
+    }
+
+    /**
+     * The cell a database interpolating {@code md5('...')} into a UNION result renders: the hash of
+     * the argument (computed here the same way). Empty for every other payload — the page still
+     * echoes the input, but the echo carries the canary, never its hash.
+     */
+    private static String md5Result(String value) {
+        java.util.regex.Matcher call =
+                java.util.regex.Pattern.compile(
+                                "md5\\('([^']*)'\\)", java.util.regex.Pattern.CASE_INSENSITIVE)
+                        .matcher(value == null ? "" : value);
+        if (!call.find()) {
+            return "";
+        }
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("MD5");
+            StringBuilder hex = new StringBuilder();
+            for (byte b :
+                    digest.digest(
+                            call.group(1).getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+                hex.append(String.format("%02x", b));
+            }
+            return "<p>hash: " + hex + "</p>";
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return "";
+        }
+    }
+
+    /**
      * A search page echoing whatever it is given and never changing its result set: the safe
      * counterpart of the rows below, and the row that catches a guard filtering too much.
      */
@@ -402,6 +452,30 @@ public final class SqlInjectionScenarioCorpus {
                 "/listing?sort=1",
                 "",
                 SqlInjectionScenarioCorpus::volatileOrderByPage);
+    }
+
+    /**
+     * A search page whose UNION result interpolates the computed value: an {@code md5('...')} probe
+     * is answered with the hash while every other payload is echoed unchanged — 200 OK, no error
+     * text, no gross shape change. The canary middle stage (Step 6.2) exists for exactly this
+     * shape, so without this row its true-positive side has no corpus coverage.
+     *
+     * <p>Labelled {@link SqlInjectionScenario.Outcome#BLIND} for the same budget reason as {@link
+     * #volatilePageOrderByInjection()}: the six appendage probes exhaust the MEDIUM budget before
+     * the canary probe runs, so the MEDIUM corpus runner never reaches it. The HIGH-strength unit
+     * tests in {@code UnionBasedDetectionStrategyUnitTest} prove the wiring instead.
+     */
+    private static SqlInjectionScenario reflectingUnionInterpolation() {
+        return new SqlInjectionScenario(
+                "reflecting-union-interpolation",
+                BLIND,
+                "Step 6.2: md5-reflection UNION row for the canary middle stage; BLIND, not "
+                        + "INJECTABLE: six appendage probes exhaust the MEDIUM budget before the "
+                        + "canary probe runs — the HIGH-strength unit tests in "
+                        + "UnionBasedDetectionStrategyUnitTest prove the wiring instead",
+                "/search?q=test",
+                "",
+                SqlInjectionScenarioCorpus::reflectingUnionPage);
     }
 
     /**
