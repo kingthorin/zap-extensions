@@ -39,8 +39,9 @@ class SqlInjectionScanRule424242UnitTest
     }
 
     @Override
-    protected int expectedRequestsForSingleQuote500() {
-        // Control, the baseline this rule fetches once per parameter, and the quote.
-        return 3;
+    protected boolean alertsOnBare500WithoutDbErrorText() {
+        // A bare 500 with no database error text is also what input validation looks like; this
+        // rule requires database content (see ErrorBasedDetectionStrategyUnitTest).
+        return false;
     }
 }

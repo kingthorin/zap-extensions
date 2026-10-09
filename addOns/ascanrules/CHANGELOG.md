@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 - Update references and CVE links to avoid redirects.
 - Adjust stop checks in the Path Traversal scan rule to terminate sooner.
+- SQL Injection (Modular, Experimental): a server error (5xx) is now only treated as evidence of injection when the response body mentions the database, so generic input-validation errors no longer raise alerts, and raw SQLite engine messages (for example `near "...": syntax error`) are recognised.
 
 ## [83] - 2026-06-26
 ### Changed

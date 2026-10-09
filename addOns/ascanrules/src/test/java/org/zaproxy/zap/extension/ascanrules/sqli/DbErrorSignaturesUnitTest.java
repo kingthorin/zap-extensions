@@ -58,6 +58,21 @@ class DbErrorSignaturesUnitTest {
         assertThat(result.get(), is(equalTo(Dbms.ORACLE)));
     }
 
+    /** The corpus's sqlite-error-in-500 shape: a raw engine message with no driver prefix. */
+    @Test
+    void shouldIdentifySqliteFromRawSyntaxErrorText() {
+        // Given
+        String body = "<html>Error executing statement: near \"'\": syntax error</html>";
+        // When
+        Optional<Dbms> result = DbErrorSignatures.identify(body);
+        // Then
+        assertThat(result.isPresent(), is(true));
+        assertThat(result.get(), is(equalTo(Dbms.SQLITE)));
+        assertThat(
+                result.get().findMatchedFragment(body).orElse(""),
+                is(equalTo("near \"'\": syntax error")));
+    }
+
     @Test
     void shouldIdentifyDerbyFromAltoroLoginPageException() {
         // Given -- AltoroJ's login.jsp prints DBUtil.isValidUser's SQLException verbatim, so a lone

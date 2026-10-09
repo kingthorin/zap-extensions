@@ -96,6 +96,25 @@ class ErrorBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
         assertThat(alertsRaised, is(empty()));
     }
 
+    /**
+     * WAVSEP's 500ErrorOnIvFailure trap: the page 500s on any SQL metacharacter because of input
+     * validation, answering with a generic exception that never mentions the database. The bare-500
+     * heuristic must not treat that as injection.
+     */
+    @Test
+    void shouldNotAlertWhenPage500sWithoutDbErrorText() throws Exception {
+        // Given
+        String path = "/sqli/error/no-db-text-500/";
+        nano.addHandler(new InputValidation500Handler(path, "id"));
+        rule.init(getHttpMessage(path + "?id=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
     @Test
     void shouldNotAlertOnOrdinaryPage() throws Exception {
         // Given
@@ -221,6 +240,33 @@ class ErrorBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
                     Response.Status.INTERNAL_ERROR,
                     NanoHTTPD.MIME_HTML,
                     "Warning: You have an error in your SQL syntax near '" + value + "'");
+        }
+    }
+
+    /**
+     * 500s with a generic, database-silent error whenever the value contains a SQL metacharacter.
+     */
+    private static class InputValidation500Handler extends NanoServerHandler {
+
+        private final String param;
+
+        InputValidation500Handler(String path, String param) {
+            super(path);
+            this.param = param;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String value = getFirstParamValue(session, param);
+            if (value != null
+                    && (value.contains("'") || value.contains("\"") || value.contains(";"))) {
+                return newFixedLengthResponse(
+                        Response.Status.INTERNAL_ERROR,
+                        NanoHTTPD.MIME_HTML,
+                        "<html><body><h1>HTTP Status 500</h1><p>Exception details:"
+                                + " java.lang.Exception: Invalid Input</p></body></html>");
+            }
+            return newFixedLengthResponse("Some ordinary content for " + value);
         }
     }
 }

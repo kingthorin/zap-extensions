@@ -21,6 +21,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.zaproxy.zap.model.Tech;
@@ -152,20 +153,17 @@ public final class DbErrorSignatures {
                 Tech.SQLite,
                 "SQLite",
                 List.of(
-                        // 40018 has one more signature here, the pattern "near \".+\": syntax
-                        // error". It is commented out rather than copied because literal() wraps
-                        // every fragment in Pattern.quote, and a quoted literal can never match a
-                        // real SQLite message such as near "'": syntax error -- those are already
-                        // covered by SQLITE_ERROR. Reinstate it as an unquoted pattern (and add a
-                        // matching entry to the shared test base) if this class ever needs to
-                        // recognise SQLite errors SQLITE_ERROR does not cover.
-                        // "near \".+\": syntax error",
                         "SQLITE_ERROR",
                         "SELECTs to the left and right of UNION do not have the same number of"
                                 + " result columns"),
                 List.of(
                         "SELECTs to the left and right of UNION do not have the same number of"
-                                + " result columns")),
+                                + " result columns"),
+                // 40018 carries the same shape but quoted, which never matches a real message;
+                // compiled unquoted here so a raw engine message with no driver prefix -- near
+                // "'": syntax error, the WAVSEP 500Error / corpus sqlite-error-in-500 shape
+                // -- matches, and the captured text becomes the alert evidence.
+                List.of("near \".+\": syntax error")),
         GENERIC(
                 "Generic SQL RDBMS",
                 List.of(
@@ -183,14 +181,25 @@ public final class DbErrorSignatures {
         private final List<Pattern> patterns;
         private final List<String> unionFragments;
         private final List<Pattern> unionPatterns;
+        private final List<Pattern> regexPatterns;
 
         Dbms(Tech tech, String label, List<String> literalFragments, List<String> unionFragments) {
+            this(tech, label, literalFragments, unionFragments, List.of());
+        }
+
+        Dbms(
+                Tech tech,
+                String label,
+                List<String> literalFragments,
+                List<String> unionFragments,
+                List<String> regexFragments) {
             this.tech = Optional.of(tech);
             this.label = label;
             this.fragments = literalFragments;
             this.patterns = literalFragments.stream().map(DbErrorSignatures::literal).toList();
             this.unionFragments = unionFragments;
             this.unionPatterns = unionFragments.stream().map(DbErrorSignatures::literal).toList();
+            this.regexPatterns = regexFragments.stream().map(DbErrorSignatures::pattern).toList();
         }
 
         Dbms(String label, List<String> literalFragments) {
@@ -200,6 +209,7 @@ public final class DbErrorSignatures {
             this.patterns = literalFragments.stream().map(DbErrorSignatures::literal).toList();
             this.unionFragments = List.of();
             this.unionPatterns = List.of();
+            this.regexPatterns = List.of();
         }
 
         public String getLabel() {
@@ -231,6 +241,13 @@ public final class DbErrorSignatures {
                     return Optional.of(fragments.get(i));
                 }
             }
+            // Regex signatures carry no fixed fragment to report: the matched text is the evidence.
+            for (Pattern regex : regexPatterns) {
+                Matcher matcher = regex.matcher(text);
+                if (matcher.find()) {
+                    return Optional.of(matcher.group());
+                }
+            }
             return Optional.empty();
         }
 
@@ -252,6 +269,14 @@ public final class DbErrorSignatures {
 
     private static Pattern literal(String fragment) {
         return Pattern.compile(Pattern.quote(fragment), Pattern.CASE_INSENSITIVE);
+    }
+
+    /**
+     * Compiles an unquoted regex signature, for engine messages that interpolate the offending
+     * token and so cannot be listed as a fixed fragment.
+     */
+    private static Pattern pattern(String regex) {
+        return Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
     }
 
     /**

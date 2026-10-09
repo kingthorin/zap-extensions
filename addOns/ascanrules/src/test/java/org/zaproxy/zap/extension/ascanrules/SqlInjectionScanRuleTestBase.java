@@ -156,8 +156,9 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
                     // Deliberately not listed: the pattern "near \".+\": syntax error"
                     // that 40018 carries for SQLite. It is a regex rather than a message a
                     // database sends, and it only ever matched because 40018 compiles its list
-                    // as patterns. A real SQLite error (e.g. near "'%'": syntax error) is
-                    // covered by SQLITE_ERROR, which the Juice Shop scenario exercises.
+                    // as patterns. DbErrorSignatures carries it as an unquoted regex instead,
+                    // so raw engine text (e.g. near "''": syntax error) matches while this
+                    // list stays response content; SQLITE_ERROR covers the prefixed rendering.
                     "SQLITE_ERROR",
                     "SELECTs to the left and right of UNION do not have the same number of result columns");
 
@@ -179,13 +180,24 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
             Pattern.compile("\\bor\\b", Pattern.CASE_INSENSITIVE);
 
     /**
-     * The number of requests {@code FiveHundredErrors.shouldAlertIf500OnSingleQuote} is expected to
-     * cost. The two rules baseline differently: the generic rule (40018) sends the quote against
-     * the base message and stops, spending two requests (control, quote), while the modular rule
-     * (424242) also fetches one baseline per parameter, shared by every technique, for three.
+     * Whether a quote-triggered 500 whose body carries no database error text is itself
+     * alert-worthy. The generic rule (40018) alerts; the modular rule (424242) does not, because a
+     * bare 500 is also what input validation looks like (WAVSEP's 500ErrorOnIvFailure trap) -- see
+     * {@code shouldNotAlertWhenPage500sWithoutDbErrorText} for the 424242 side.
      *
-     * <p>Stated as an exact count on purpose -- it is the budget regression signal for whichever
-     * rule is under test, so raising it hides exactly what it exists to catch.
+     * @return whether the rule under test alerts on a database-silent 500
+     */
+    protected boolean alertsOnBare500WithoutDbErrorText() {
+        return true;
+    }
+
+    /**
+     * The number of requests {@code FiveHundredErrors.shouldAlertIf500OnSingleQuote} is expected to
+     * cost for a rule that alerts on it. The generic rule (40018) sends the quote against the base
+     * message and stops, spending two requests (control, quote).
+     *
+     * <p>Stated as an exact count on purpose -- it is the budget regression signal for the rule
+     * under test, so raising it hides exactly what it exists to catch.
      *
      * @return the expected number of requests
      */
@@ -1258,16 +1270,20 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
             // When
             rule.scan();
             // Then
-            assertThat(httpMessagesSent, hasSize(equalTo(expectedRequestsForSingleQuote500())));
-            assertThat(alertsRaised, hasSize(1));
-            assertThat(
-                    alertsRaised.get(0).getEvidence(),
-                    is(equalTo("HTTP/1.1 500 Internal Server Error")));
-            assertThat(alertsRaised.get(0).getParam(), is(equalTo(param)));
-            assertThat(alertsRaised.get(0).getAttack(), is(equalTo("'")));
-            assertThat(alertsRaised.get(0).getRisk(), is(equalTo(Alert.RISK_HIGH)));
-            assertThat(alertsRaised.get(0).getConfidence(), is(equalTo(Alert.CONFIDENCE_LOW)));
-            assertNoParams(alertsRaised.get(0));
+            if (alertsOnBare500WithoutDbErrorText()) {
+                assertThat(httpMessagesSent, hasSize(equalTo(expectedRequestsForSingleQuote500())));
+                assertThat(alertsRaised, hasSize(1));
+                assertThat(
+                        alertsRaised.get(0).getEvidence(),
+                        is(equalTo("HTTP/1.1 500 Internal Server Error")));
+                assertThat(alertsRaised.get(0).getParam(), is(equalTo(param)));
+                assertThat(alertsRaised.get(0).getAttack(), is(equalTo("'")));
+                assertThat(alertsRaised.get(0).getRisk(), is(equalTo(Alert.RISK_HIGH)));
+                assertThat(alertsRaised.get(0).getConfidence(), is(equalTo(Alert.CONFIDENCE_LOW)));
+                assertNoParams(alertsRaised.get(0));
+            } else {
+                assertThat(alertsRaised, hasSize(0));
+            }
         }
 
         @Test

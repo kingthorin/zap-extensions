@@ -21,6 +21,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.network.HttpMessage;
@@ -54,6 +55,24 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
     /** Fallback payloads for unknown context. */
     private static final List<String> ERROR_PAYLOADS_FALLBACK =
             List.of("'", "\"", "';", "\");", "'(", ")", "NULL", "'\"");
+
+    /**
+     * Case-insensitive markers of database content in an error page. Looser than {@link
+     * DbErrorSignatures} on purpose: the server-error path also has to work with custom error pages
+     * that mention the database without quoting any engine's message verbatim.
+     */
+    private static final List<String> DB_ERROR_MENTIONS =
+            List.of(
+                    "sql",
+                    "jdbc",
+                    "odbc",
+                    "sqlite",
+                    "mysql",
+                    "mariadb",
+                    "postgres",
+                    "pgsql",
+                    "oracle",
+                    "db2");
 
     private final ResponseComparator comparator = new ResponseComparator();
 
@@ -115,9 +134,9 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
 
     /**
      * Checks one probe response and raises an alert if it is conclusive: either a known DB error
-     * signature or a server error the baseline and control requests did not produce (a quote that
-     * reliably breaks the page). The caller has already spent the request and checked the budget,
-     * so nothing is counted here.
+     * signature or a server error the baseline and control requests did not produce whose body
+     * mentions the database (a quote that reliably breaks the page). The caller has already spent
+     * the request and checked the budget, so nothing is counted here.
      *
      * @return true if an alert was raised
      */
@@ -142,11 +161,15 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
         }
 
         // A payload that turns a working baseline into a server error (while a safe control value
-        // does not) is itself evidence of injection: pages don't 500 on benign input.
+        // does not) is evidence of injection only when the error page talks about the database:
+        // input validation rejects metacharacters with a bare 500 just as happily (WAVSEP's
+        // 500ErrorOnIvFailure trap answers with a generic "Invalid Input" exception), and without
+        // database content the two are indistinguishable.
         if (isServerError(attackMsg)
                 && !isServerError(baseline)
                 && (context.getCachedControl() == null
-                        || !isServerError(context.getCachedControl()))) {
+                        || !isServerError(context.getCachedControl()))
+                && mentionsDbErrorText(attackMsg)) {
             context.newAlert()
                     .setConfidence(Alert.CONFIDENCE_LOW)
                     .setParam(context.getParamName())
@@ -162,6 +185,12 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
     private static boolean isServerError(HttpMessage msg) {
         int status = msg.getResponseHeader().getStatusCode();
         return status >= 500 && status < 600;
+    }
+
+    /** Whether the response body mentions the database, driver content, or an engine name. */
+    private static boolean mentionsDbErrorText(HttpMessage msg) {
+        String body = msg.getResponseBody().toString().toLowerCase(Locale.ROOT);
+        return DB_ERROR_MENTIONS.stream().anyMatch(body::contains);
     }
 
     private List<String> selectPayloads(ScanContext context) {
