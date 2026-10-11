@@ -21,6 +21,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
 import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
@@ -58,6 +59,10 @@ class ConditionalErrorBasedDetectionStrategyUnitTest
         // Then
         assertThat(alertsRaised, hasSize(1));
         assertThat(alertsRaised.get(0).getParam(), is(equalTo("id")));
+        assertThat(alertsRaised.get(0).getAttack(), containsString("CASE WHEN (1=1)"));
+        assertThat(
+                alertsRaised.get(0).getOtherInfo(),
+                containsString("Database error raised only when"));
     }
 
     /**
