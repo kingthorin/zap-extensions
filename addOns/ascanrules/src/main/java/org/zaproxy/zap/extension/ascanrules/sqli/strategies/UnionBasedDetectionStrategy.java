@@ -20,6 +20,8 @@
 package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.List;
 import org.parosproxy.paros.core.scanner.Alert;
@@ -240,8 +242,7 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
      */
     static String md5Hex(String canary) throws Exception {
         byte[] digest =
-                java.security.MessageDigest.getInstance("MD5")
-                        .digest(canary.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                MessageDigest.getInstance("MD5").digest(canary.getBytes(StandardCharsets.UTF_8));
         StringBuilder hex = new StringBuilder();
         for (byte b : digest) {
             hex.append(String.format("%02x", b));

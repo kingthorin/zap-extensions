@@ -21,6 +21,9 @@ package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.parosproxy.paros.core.scanner.AbstractPlugin;
 
@@ -40,7 +43,7 @@ public final class ResponseBodyUtils {
         if (text == null || text.isEmpty() || needle == null || needle.isEmpty()) {
             return text == null ? "" : text;
         }
-        return text.replaceAll("(?i)" + java.util.regex.Pattern.quote(needle), "");
+        return text.replaceAll("(?i)" + Pattern.quote(needle), "");
     }
 
     /**
@@ -67,9 +70,9 @@ public final class ResponseBodyUtils {
         // one's occurrence and leaves a partial remnant behind, manufacturing a difference between
         // otherwise identical responses.
         String[] ordered =
-                java.util.Arrays.stream(patterns)
+                Arrays.stream(patterns)
                         .filter(p -> p != null && !p.isEmpty())
-                        .sorted(java.util.Comparator.comparingInt(String::length).reversed())
+                        .sorted(Comparator.comparingInt(String::length).reversed())
                         .toArray(String[]::new);
 
         for (String pattern : ordered) {

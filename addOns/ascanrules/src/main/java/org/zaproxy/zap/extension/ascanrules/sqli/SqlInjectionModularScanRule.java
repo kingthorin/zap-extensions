@@ -103,6 +103,10 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
      * One entry per detection technique, cheapest/most-common-first. {@link #scan} stops at the
      * first strategy that raises an alert. Strategies are added one at a time, each its own commit
      * with its own tests.
+     *
+     * <p>Positionally coupled to the {@code techniqueNames} array in {@link #scan}: strategy at
+     * index {@code i} must be the one named at {@code techniqueNames[i]}, because {@link #scan}
+     * pairs them by index. Add a technique to both, in the same position, or not at all.
      */
     private final List<DetectionStrategy> strategies =
             List.of(
@@ -459,7 +463,7 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     }
 
     @Override
-    public org.zaproxy.zap.model.TechSet getTechSet() {
+    public TechSet getTechSet() {
         return super.getTechSet();
     }
 

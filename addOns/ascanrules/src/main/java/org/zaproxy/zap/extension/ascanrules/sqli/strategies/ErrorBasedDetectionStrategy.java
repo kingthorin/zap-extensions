@@ -28,7 +28,6 @@ import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.extension.ascanrules.sqli.DbErrorSignatures;
 import org.zaproxy.zap.extension.ascanrules.sqli.DbErrorSignatures.Dbms;
 import org.zaproxy.zap.extension.ascanrules.sqli.DetectionStrategy;
-import org.zaproxy.zap.extension.ascanrules.sqli.ResponseComparator;
 import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
 /**
@@ -73,8 +72,6 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
                     "pgsql",
                     "oracle",
                     "db2");
-
-    private final ResponseComparator comparator = new ResponseComparator();
 
     @Override
     public boolean detect(ScanContext context) throws IOException {

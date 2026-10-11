@@ -193,8 +193,10 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
 
     /**
      * The number of requests {@code FiveHundredErrors.shouldAlertIf500OnSingleQuote} is expected to
-     * cost for a rule that alerts on it. The generic rule (40018) sends the quote against the base
-     * message and stops, spending two requests (control, quote).
+     * cost, for a rule that alerts on a database-silent 500. The generic rule (40018) sends the
+     * quote against the base message and stops, spending two requests (control, quote). The modular
+     * rule (424242) does not alert on that shape ({@link #alertsOnBare500WithoutDbErrorText()} is
+     * {@code false}), so this count does not apply to it.
      *
      * <p>Stated as an exact count on purpose -- it is the budget regression signal for the rule
      * under test, so raising it hides exactly what it exists to catch.
