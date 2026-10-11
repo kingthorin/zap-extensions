@@ -65,6 +65,7 @@ public class ParameterContext {
     public float estimateProbabilityFor(String technique) {
         return switch (technique) {
             case "ERROR" -> isStringLiteralContext ? 0.85f : (isNumericContext ? 0.7f : 0.75f);
+            case "CONDERROR" -> isStringLiteralContext ? 0.8f : (isNumericContext ? 0.7f : 0.75f);
             case "BOOLEAN" -> 0.8f;
             case "EXPRESSION" -> isNumericContext ? 0.85f : 0.5f;
             case "ORDERBY" -> 0.6f; // no order-by context is known, so take the conservative prior
