@@ -98,7 +98,7 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
                                 originalValue);
                 if (template != null) {
                     ascMatchesBaseline =
-                            comparator.matchesTemplate(
+                            comparator.matches(
                                     template,
                                     baseline,
                                     originalValue,
@@ -130,22 +130,14 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         // Check if DESC differs from baseline
         ResponseComparator.VolatileTemplate fixedTemplate = template;
         boolean descDiffersFromBaseline =
-                fixedTemplate != null
-                        ? !comparator.matchesTemplate(
-                                fixedTemplate,
-                                baseline,
-                                originalValue,
-                                originalValue,
-                                descMsg,
-                                originalValue,
-                                descPayload)
-                        : !comparator.matchesExactlyAfterStripping(
-                                baseline,
-                                originalValue,
-                                originalValue,
-                                descMsg,
-                                originalValue,
-                                descPayload);
+                !comparator.matches(
+                        fixedTemplate,
+                        baseline,
+                        originalValue,
+                        originalValue,
+                        descMsg,
+                        originalValue,
+                        descPayload);
 
         if (descDiffersFromBaseline) {
             context.newAlert()
@@ -189,22 +181,14 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         context.sendAndReceive(validMsg);
 
         boolean validMatchesBaseline =
-                template != null
-                        ? comparator.matchesTemplate(
-                                template,
-                                baseline,
-                                originalValue,
-                                originalValue,
-                                validMsg,
-                                originalValue,
-                                validValue)
-                        : comparator.matchesExactlyAfterStripping(
-                                baseline,
-                                originalValue,
-                                originalValue,
-                                validMsg,
-                                originalValue,
-                                validValue);
+                comparator.matches(
+                        template,
+                        baseline,
+                        originalValue,
+                        originalValue,
+                        validMsg,
+                        originalValue,
+                        validValue);
         if (!validMatchesBaseline) {
             return false;
         }
@@ -216,22 +200,14 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         context.sendAndReceive(invalidMsg);
 
         boolean invalidDiffersFromBaseline =
-                template != null
-                        ? !comparator.matchesTemplate(
-                                template,
-                                baseline,
-                                originalValue,
-                                originalValue,
-                                invalidMsg,
-                                originalValue,
-                                invalidValue)
-                        : !comparator.matchesExactlyAfterStripping(
-                                baseline,
-                                originalValue,
-                                originalValue,
-                                invalidMsg,
-                                originalValue,
-                                invalidValue);
+                !comparator.matches(
+                        template,
+                        baseline,
+                        originalValue,
+                        originalValue,
+                        invalidMsg,
+                        originalValue,
+                        invalidValue);
         if (!invalidDiffersFromBaseline) {
             return false;
         }

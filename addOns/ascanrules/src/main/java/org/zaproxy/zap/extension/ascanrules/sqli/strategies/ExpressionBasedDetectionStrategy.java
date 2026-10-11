@@ -170,7 +170,7 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
                 used++;
                 if (slot.template != null) {
                     variant1MatchesBaseline =
-                            comparator.matchesTemplate(
+                            comparator.matches(
                                     slot.template,
                                     baselineMsg,
                                     originalValue,
@@ -201,7 +201,7 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
             // alert direction (IN variants only differ by their arithmetic value), and
             // a template miss on variant2 fails closed to "no alert".
             boolean variant2MatchesBaseline =
-                    comparator.matchesTemplate(
+                    comparator.matches(
                             slot.template,
                             baselineMsg,
                             originalValue,

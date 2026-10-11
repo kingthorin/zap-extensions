@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.HexFormat;
 import java.util.List;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.network.HttpMessage;
@@ -243,14 +244,11 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
     static String md5Hex(String canary) throws Exception {
         byte[] digest =
                 MessageDigest.getInstance("MD5").digest(canary.getBytes(StandardCharsets.UTF_8));
-        StringBuilder hex = new StringBuilder();
-        for (byte b : digest) {
-            hex.append(String.format("%02x", b));
-        }
-        return hex.toString();
+        return HexFormat.of().formatHex(digest);
     }
 
     private static final SecureRandom CANARY_RANDOM = new SecureRandom();
+    private static final HexFormat CANARY_HEX = HexFormat.of().withLowerCase();
 
     /**
      * A random hex canary with a fixed non-hex prefix, so the token (pure hex) can never coincide
@@ -260,10 +258,6 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
     private static String randomCanary() {
         byte[] bytes = new byte[7];
         CANARY_RANDOM.nextBytes(bytes);
-        StringBuilder hex = new StringBuilder("zx");
-        for (byte b : bytes) {
-            hex.append(String.format("%02x", b));
-        }
-        return hex.toString();
+        return "zx" + CANARY_HEX.formatHex(bytes);
     }
 }

@@ -100,15 +100,14 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
                                     originalValue);
                     used++;
                     trueMatchesBaseline =
-                            template != null
-                                    && comparator.matchesTemplate(
-                                            template,
-                                            baseline,
-                                            originalValue,
-                                            originalValue,
-                                            trueMsg,
-                                            originalValue,
-                                            trueValue);
+                            comparator.matches(
+                                    template,
+                                    baseline,
+                                    originalValue,
+                                    originalValue,
+                                    trueMsg,
+                                    originalValue,
+                                    trueValue);
                 }
             }
 
@@ -130,22 +129,14 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
             used++;
 
             boolean falseDiffersFromBaseline =
-                    template != null
-                            ? !comparator.matchesTemplate(
-                                    template,
-                                    baseline,
-                                    originalValue,
-                                    originalValue,
-                                    falseMsg,
-                                    originalValue,
-                                    falseValue)
-                            : !comparator.matchesExactlyAfterStripping(
-                                    baseline,
-                                    originalValue,
-                                    originalValue,
-                                    falseMsg,
-                                    originalValue,
-                                    falseValue);
+                    !comparator.matches(
+                            template,
+                            baseline,
+                            originalValue,
+                            originalValue,
+                            falseMsg,
+                            originalValue,
+                            falseValue);
 
             if (falseDiffersFromBaseline) {
                 if (!comparator.isDifferenceExplainedByErrorStatus(baseline, falseMsg)) {

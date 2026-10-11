@@ -99,20 +99,10 @@ public class LoginBypassDetectionStrategy implements DetectionStrategy {
     }
 
     private boolean isLoginContext(String body) {
-        for (String keyword : LOGIN_KEYWORDS) {
-            if (body.contains(keyword)) {
-                return true;
-            }
-        }
-        return false;
+        return LOGIN_KEYWORDS.stream().anyMatch(body::contains);
     }
 
     private boolean hasSuccessIndicators(String body) {
-        for (String keyword : SUCCESS_KEYWORDS) {
-            if (body.contains(keyword)) {
-                return true;
-            }
-        }
-        return false;
+        return SUCCESS_KEYWORDS.stream().anyMatch(body::contains);
     }
 }

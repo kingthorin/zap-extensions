@@ -427,6 +427,26 @@ public class ResponseComparator {
      * @param bValueSent the value actually sent in {@code b}'s request
      * @return true if the probe matches the template
      */
+    /**
+     * Whether {@code a} and {@code b} are the same outcome, comparing against a volatile-content
+     * {@code template} when one was derived and falling back to exact-after-stripping when it was
+     * not ({@code template == null}). Lets callers drop the {@code template != null ? … : …} fork.
+     */
+    public boolean matches(
+            VolatileTemplate template,
+            HttpMessage a,
+            String aOriginalValue,
+            String aValueSent,
+            HttpMessage b,
+            String bOriginalValue,
+            String bValueSent) {
+        return template == null
+                ? matchesExactlyAfterStripping(
+                        a, aOriginalValue, aValueSent, b, bOriginalValue, bValueSent)
+                : matchesTemplate(
+                        template, a, aOriginalValue, aValueSent, b, bOriginalValue, bValueSent);
+    }
+
     public boolean matchesTemplate(
             VolatileTemplate template,
             HttpMessage a,
