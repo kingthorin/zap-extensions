@@ -135,6 +135,47 @@ class ErrorBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
         assertThat(alertsRaised, is(empty()));
     }
 
+    /**
+     * WAVSEP Case02/04/06 shape: any SQL-shaped value gets the same fixed {@code
+     * java.sql.SQLException} string back, regardless of what the value was. The signature is real
+     * (it matches {@code Dbms.GENERIC}), but the text is payload-independent, so two different
+     * probes produce byte-identical error bodies -- a canned rejection, not an engine complaining
+     * about a specific query.
+     */
+    @Test
+    void shouldNotAlertWhenGenericSignatureIsIdenticalForDifferentProbes() throws Exception {
+        // Given
+        String path = "/sqli/error/canned-generic/";
+        nano.addHandler(new CannedGenericErrorHandler(path, "id"));
+        rule.init(getHttpMessage(path + "?id=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    /**
+     * The same GENERIC family, but a genuine failure: the message quotes the offending input, so
+     * the bare probe ({@code '}) and the appended probe ({@code test'}) produce different bodies.
+     * The payload-dependence check must not swallow this.
+     */
+    @Test
+    void shouldAlertWhenGenericSignatureDiffersAcrossProbes() throws Exception {
+        // Given
+        String path = "/sqli/error/echoing-generic/";
+        nano.addHandler(new EchoingGenericErrorHandler(path, "id"));
+        rule.init(getHttpMessage(path + "?id=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(alertsRaised.get(0).getParam(), is(equalTo("id")));
+    }
+
     /** Errors with a MySQL-shaped message only when the parameter contains a SQL metacharacter. */
     private static class GenuineSqlErrorHandler extends NanoServerHandler {
 
@@ -265,6 +306,59 @@ class ErrorBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
                         NanoHTTPD.MIME_HTML,
                         "<html><body><h1>HTTP Status 500</h1><p>Exception details:"
                                 + " java.lang.Exception: Invalid Input</p></body></html>");
+            }
+            return newFixedLengthResponse("Some ordinary content for " + value);
+        }
+    }
+
+    /**
+     * Answers any SQL-shaped value with one fixed {@code java.sql.SQLException} string -- the
+     * WAVSEP Case02/04/06 trap. The text never varies with the input.
+     */
+    private static class CannedGenericErrorHandler extends NanoServerHandler {
+
+        private final String param;
+
+        CannedGenericErrorHandler(String path, String param) {
+            super(path);
+            this.param = param;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String value = getFirstParamValue(session, param);
+            if (value != null
+                    && (value.contains("'") || value.contains("\"") || value.contains(";"))) {
+                return newFixedLengthResponse(
+                        Response.Status.INTERNAL_ERROR,
+                        NanoHTTPD.MIME_HTML,
+                        "java.sql.SQLException: Invalid Input for SQL");
+            }
+            return newFixedLengthResponse("Some ordinary content for " + value);
+        }
+    }
+
+    /**
+     * A GENERIC-shaped failure that quotes the offending input in its message, so the response
+     * changes when the probe's surrounding value changes.
+     */
+    private static class EchoingGenericErrorHandler extends NanoServerHandler {
+
+        private final String param;
+
+        EchoingGenericErrorHandler(String path, String param) {
+            super(path);
+            this.param = param;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String value = getFirstParamValue(session, param);
+            if (value != null && (value.contains("'") || value.contains("\""))) {
+                return newFixedLengthResponse(
+                        Response.Status.INTERNAL_ERROR,
+                        NanoHTTPD.MIME_HTML,
+                        "java.sql.SQLException: invalid query near '" + value + "'");
             }
             return newFixedLengthResponse("Some ordinary content for " + value);
         }

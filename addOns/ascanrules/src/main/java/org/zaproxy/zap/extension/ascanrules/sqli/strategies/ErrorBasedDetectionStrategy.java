@@ -36,10 +36,12 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
  *
  * <p>Unlike the generic rule (40018), a raw error-signature match here is never itself sufficient:
  * some pages (see WAVSEP's honeypot false-positive traps) return a generic SQL-error-shaped
- * response for <em>any</em> malformed input, not specifically because of the SQL metacharacter.
- * Before alerting, this strategy re-sends the same parameter with a value that contains no SQL
- * metacharacters at all; if that control request produces the same error signature, the page errors
- * on anything, and this is not evidence of injection.
+ * response for <em>any</em> malformed input, not specifically because of the SQL metacharacter. Two
+ * checks guard against that: a control request whose value contains no SQL metacharacters at all
+ * must not produce the same error (if it does, the page errors on anything), and a match that lands
+ * only on the generic {@code Dbms.GENERIC} family must change when the probe's surrounding value
+ * changes -- a canned message that is byte-identical for two different probes says nothing about
+ * either. Engine-specific signatures (MySQL, Derby, ORA-..., ...) are taken at face value.
  */
 public class ErrorBasedDetectionStrategy implements DetectionStrategy {
 
@@ -108,7 +110,32 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
             context.sendAndReceive(bareMsg);
             used++;
 
-            if (raiseOnResponse(context, baseline, bareMsg, payload)) {
+            Optional<Dbms> bareDbms =
+                    DbErrorSignatures.identify(bareMsg.getResponseBody().toString());
+            if (bareDbms.isPresent()) {
+                if (bareDbms.get() == Dbms.GENERIC && !originalValue.isEmpty()) {
+                    // Generic signatures (java.sql.SQLException & co) are too weak to take on one
+                    // response alone: confirm the error is payload-dependent by sending the same
+                    // payload with a different surrounding value. A page that answers both probes
+                    // with the same text (WAVSEP's Case02/04/06 trap) is dispensing a canned
+                    // rejection, not reporting what the query did. When the original value is
+                    // empty the two probes would be the same request, so the comparison would
+                    // carry no information and is skipped.
+                    if (context.isStopped() || used >= budget) {
+                        return false;
+                    }
+                    HttpMessage confirmMsg = context.newMessage();
+                    context.setParam(confirmMsg, originalValue + payload);
+                    context.sendAndReceive(confirmMsg);
+                    used++;
+                    if (isSameResponse(bareMsg, confirmMsg)) {
+                        continue;
+                    }
+                }
+                return raiseOnSignature(context, bareDbms.get(), bareMsg, payload);
+            }
+
+            if (raiseOnServerError(context, baseline, bareMsg, payload)) {
                 return true;
             }
 
@@ -129,6 +156,29 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
         return false;
     }
 
+    /** Whether two probe responses are indistinguishable: same status and same body. */
+    private static boolean isSameResponse(HttpMessage one, HttpMessage other) {
+        return one.getResponseHeader().getStatusCode() == other.getResponseHeader().getStatusCode()
+                && one.getResponseBody().toString().equals(other.getResponseBody().toString());
+    }
+
+    /** Raises the medium-confidence alert for a matched database error signature. */
+    private boolean raiseOnSignature(
+            ScanContext context, Dbms dbms, HttpMessage attackMsg, String attackValue) {
+        String evidence =
+                dbms.findMatchedFragment(attackMsg.getResponseBody().toString())
+                        .orElse(dbms.getLabel());
+        context.newAlert()
+                .setConfidence(Alert.CONFIDENCE_MEDIUM)
+                .setParam(context.getParamName())
+                .setAttack(attackValue)
+                .setEvidence(evidence)
+                .setOtherInfo("Likely RDBMS: " + dbms.getLabel())
+                .setMessage(attackMsg)
+                .raise();
+        return true;
+    }
+
     /**
      * Checks one probe response and raises an alert if it is conclusive: either a known DB error
      * signature or a server error the baseline and control requests did not produce whose body
@@ -142,26 +192,23 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
             throws IOException {
         Optional<Dbms> dbms = DbErrorSignatures.identify(attackMsg.getResponseBody().toString());
         if (dbms.isPresent()) {
-            String evidence =
-                    dbms.get()
-                            .findMatchedFragment(attackMsg.getResponseBody().toString())
-                            .orElse(dbms.get().getLabel());
-            context.newAlert()
-                    .setConfidence(Alert.CONFIDENCE_MEDIUM)
-                    .setParam(context.getParamName())
-                    .setAttack(attackValue)
-                    .setEvidence(evidence)
-                    .setOtherInfo("Likely RDBMS: " + dbms.get().getLabel())
-                    .setMessage(attackMsg)
-                    .raise();
-            return true;
+            return raiseOnSignature(context, dbms.get(), attackMsg, attackValue);
         }
 
-        // A payload that turns a working baseline into a server error (while a safe control value
-        // does not) is evidence of injection only when the error page talks about the database:
-        // input validation rejects metacharacters with a bare 500 just as happily (WAVSEP's
-        // 500ErrorOnIvFailure trap answers with a generic "Invalid Input" exception), and without
-        // database content the two are indistinguishable.
+        return raiseOnServerError(context, baseline, attackMsg, attackValue);
+    }
+
+    /**
+     * A payload that turns a working baseline into a server error (while a safe control value does
+     * not) is evidence of injection only when the error page talks about the database: input
+     * validation rejects metacharacters with a bare 500 just as happily (WAVSEP's
+     * 500ErrorOnIvFailure trap answers with a generic "Invalid Input" exception), and without
+     * database content the two are indistinguishable.
+     *
+     * @return true if an alert was raised
+     */
+    private boolean raiseOnServerError(
+            ScanContext context, HttpMessage baseline, HttpMessage attackMsg, String attackValue) {
         if (isServerError(attackMsg)
                 && !isServerError(baseline)
                 && (context.getCachedControl() == null
