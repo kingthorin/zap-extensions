@@ -24,12 +24,17 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.emptyOrNullString;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 
+import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
+import net.sf.json.JSONObject;
 import org.junit.jupiter.api.Test;
+import org.parosproxy.paros.network.HttpHeader;
+import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 
 /**
@@ -72,5 +77,39 @@ class SqlInjectionModularScanRuleUnitTest extends AbstractSqlInjectionModularSca
 
         // Then
         assertThat(alertsRaised, is(empty()));
+    }
+
+    @Test
+    void shouldAlertOnSqlErrorInJsonBodyParameter() throws Exception {
+        // Given
+        String path = "/sqli/json/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String id = JSONObject.fromObject(getBody(session)).getString("id");
+                        if (id.contains("'")) {
+                            return newFixedLengthResponse(
+                                    Response.Status.INTERNAL_ERROR,
+                                    NanoHTTPD.MIME_HTML,
+                                    "You have an error in your SQL syntax near '' at line 1");
+                        }
+                        return newFixedLengthResponse(
+                                Response.Status.OK,
+                                NanoHTTPD.MIME_HTML,
+                                "<html>Some Content, matching row found</html>");
+                    }
+                });
+        HttpMessage msg = getHttpMessage("POST", path, "<html></html>");
+        msg.getRequestHeader().setHeader(HttpHeader.CONTENT_TYPE, "application/json");
+        msg.setRequestBody("{\"id\":\"1\"}");
+        rule.init(msg, parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(alertsRaised.get(0).getParam(), is(equalTo("id")));
     }
 }
