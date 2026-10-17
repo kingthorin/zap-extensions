@@ -99,4 +99,40 @@ public final class ResponseBodyUtils {
 
         return result;
     }
+
+    /** Placeholder that volatile regions are normalised to before comparison. */
+    private static final String VOLATILE_PLACEHOLDER = "__VOLATILE__";
+
+    /**
+     * Normalises per-request volatile regions (CSRF hidden fields, ISO-8601 timestamps) to a
+     * fixed placeholder so rotating tokens do not break response differentials.
+     *
+     * <p>Patterns are intentionally narrow (under-match by design): only hidden-input fields
+     * whose name suggests a CSRF/token role with a long token value, and ISO-8601 timestamp
+     * literals. Anything not matching takes today's comparison path unchanged, so real content
+     * differences are never wiped.
+     *
+     * @param text the response body to normalise
+     * @return the body with matched volatile regions replaced, or empty string if null
+     */
+    public static String stripVolatileTokens(String text) {
+        if (text == null || text.isEmpty()) {
+            return text == null ? "" : text;
+        }
+
+        String result = text;
+        // Hidden-input CSRF: name hints csrf/token, value is a 16+ char token.
+        result =
+                Pattern.compile(
+                                "(?i)(<input[^>]*name\\s*=\\s*[\"']?(?:csrf|csrf_token|_token|authenticity_token)[\"']?[^>]*value\\s*=\\s*[\"'])[A-Za-z0-9+/=_-]{16,}([\"'])")
+                        .matcher(result)
+                        .replaceAll("$1" + VOLATILE_PLACEHOLDER + "$2");
+        // ISO-8601 timestamps: 2026-01-02T15:04:05 with optional fraction/zone.
+        result =
+                Pattern.compile("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?)?")
+                        .matcher(result)
+                        .replaceAll(VOLATILE_PLACEHOLDER);
+        return result;
+    }
+
 }

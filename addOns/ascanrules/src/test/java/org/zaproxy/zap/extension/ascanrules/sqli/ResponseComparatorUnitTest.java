@@ -79,6 +79,86 @@ class ResponseComparatorUnitTest {
                         baseline, ORIGINAL, control, CONTROL),
                 is(false));
     }
+    // -- Volatile-token normalisation: rotating CSRF/timestamps must not break the exact path. --
+
+    /**
+     * Rotating CSRF hidden fields on otherwise identical pages are the same outcome: the exact
+     * comparison normalises the token before stripping, so token churn alone never reads as a
+     * differential.
+     */
+    @Test
+    void shouldMatchPagesThatDifferOnlyInARotatingCsrfToken() throws Exception {
+        // Given
+        HttpMessage baseline =
+                response(
+                        "200 OK",
+                        "",
+                        "<html><body>1 booking found<input type=\"hidden\" name=\"csrf_token\""
+                                + " value=\"aB3dE5fG7hJ9kL1mN4\"/></body></html>");
+        HttpMessage control =
+                response(
+                        "200 OK",
+                        "",
+                        "<html><body>1 booking found<input type=\"hidden\" name=\"csrf_token\""
+                                + " value=\"zY8xW6vU4tS2rQ0pO3\"/></body></html>");
+        // Then
+        assertThat(
+                comparator.isIndistinguishableFromBenignControl(
+                        baseline, ORIGINAL, control, CONTROL),
+                is(true));
+    }
+
+    /**
+     * ISO-8601 timestamps are volatile the same way tokens are: a render timestamp that moves
+     * every response must not read as a difference on its own.
+     */
+    @Test
+    void shouldMatchPagesThatDifferOnlyInAnIsoTimestamp() throws Exception {
+        // Given
+        HttpMessage baseline =
+                response(
+                        "200 OK",
+                        "",
+                        "<html><body>1 booking found, rendered 2026-01-02T15:04:05Z</body></html>");
+        HttpMessage control =
+                response(
+                        "200 OK",
+                        "",
+                        "<html><body>1 booking found, rendered 2026-01-02T15:04:09Z</body></html>");
+        // Then
+        assertThat(
+                comparator.isIndistinguishableFromBenignControl(
+                        baseline, ORIGINAL, control, CONTROL),
+                is(true));
+    }
+
+    /**
+     * The strip must not manufacture sameness: a real content difference alongside rotating
+     * tokens is still a different outcome.
+     */
+    @Test
+    void shouldNotMatchPagesWithARealDifferenceBehindRotatingTokens() throws Exception {
+        // Given
+        HttpMessage baseline =
+                response(
+                        "200 OK",
+                        "",
+                        "<html><body>1 booking found<input type=\"hidden\" name=\"csrf_token\""
+                                + " value=\"aB3dE5fG7hJ9kL1mN4\"/></body></html>");
+        HttpMessage control =
+                response(
+                        "200 OK",
+                        "",
+                        "<html><body>2 bookings found<input type=\"hidden\" name=\"csrf_token\""
+                                + " value=\"zY8xW6vU4tS2rQ0pO3\"/></body></html>");
+        // Then
+        assertThat(
+                comparator.isIndistinguishableFromBenignControl(
+                        baseline, ORIGINAL, control, CONTROL),
+                is(false));
+    }
+
+
 
     // -- Volatile templates: learn what moves between two renders, compare the rest exactly. --
 

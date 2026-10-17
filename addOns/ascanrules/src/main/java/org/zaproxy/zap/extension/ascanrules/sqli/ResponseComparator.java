@@ -142,8 +142,13 @@ public class ResponseComparator {
             return true;
         }
 
-        return ResponseBodyUtils.stripAllEncodedForms(aBody, aOriginalValue, aValueSent)
-                .equals(ResponseBodyUtils.stripAllEncodedForms(bBody, bOriginalValue, bValueSent));
+        return ResponseBodyUtils.stripAllEncodedForms(
+                        ResponseBodyUtils.stripVolatileTokens(aBody), aOriginalValue, aValueSent)
+                .equals(
+                        ResponseBodyUtils.stripAllEncodedForms(
+                                ResponseBodyUtils.stripVolatileTokens(bBody),
+                                bOriginalValue,
+                                bValueSent));
     }
 
     /**
