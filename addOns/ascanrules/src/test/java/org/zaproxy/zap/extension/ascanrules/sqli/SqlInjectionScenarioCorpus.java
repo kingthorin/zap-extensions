@@ -28,10 +28,15 @@ import static org.zaproxy.zap.testutils.RequestCondition.formParam;
 import static org.zaproxy.zap.testutils.RequestCondition.param;
 
 import fi.iki.elonen.NanoHTTPD;
+import fi.iki.elonen.NanoHTTPD.IHTTPSession;
+import fi.iki.elonen.NanoHTTPD.Response;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import net.sf.json.JSONObject;
+import org.parosproxy.paros.network.HttpHeader;
 import org.zaproxy.zap.testutils.NanoServerHandler;
 import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
@@ -83,7 +88,10 @@ public final class SqlInjectionScenarioCorpus {
                 reflectingUnionInterpolation(),
                 wordpressTaxQuery(),
                 wordPressSearchOrderBy(),
-                blindDateFilter());
+                blindDateFilter(),
+                jsonBodyIdError(),
+                jsonBodyIgnoredFilter(),
+                jsonBodyQuoteServerError());
     }
 
     /** The body a POST scenario sends before the parameter under test, kept short on purpose. */
@@ -598,6 +606,105 @@ public final class SqlInjectionScenarioCorpus {
                                 .when(param("id").matches(value -> true))
                                 .thenReturn(404, "Not found")
                                 .build());
+    }
+
+    /**
+     * A JSON body parameter reaching the database error path: the endpoint parses {@code
+     * application/json} and interpolates the {@code id} value, so a quote breaks the query and the
+     * page answers with a database error. The shape the model test {@code
+     * shouldAlertOnSqlErrorInJsonBodyParameter} pins, promoted to a scored corpus row — a JSON
+     * parameter was covered by a one-off test and measured by nothing.
+     */
+    private static SqlInjectionScenario jsonBodyIdError() {
+        return new SqlInjectionScenario(
+                "json-body-id-error",
+                INJECTABLE,
+                "json_model test pattern, agent/baseline_score.json",
+                "/api/items",
+                "{\"id\":\"1\"}",
+                HttpHeader.JSON_CONTENT_TYPE,
+                () ->
+                        jsonBodyHandler(
+                                "id",
+                                value -> {
+                                    if (value.contains("'")) {
+                                        return newFixedLengthResponse(
+                                                Response.Status.INTERNAL_ERROR,
+                                                NanoHTTPD.MIME_HTML,
+                                                "You have an error in your SQL syntax near ''"
+                                                        + " at line 1");
+                                    }
+                                    return null;
+                                }));
+    }
+
+    /**
+     * A JSON body parameter the application parses but never puts into the query: the filter value
+     * is echoed nowhere and interpolated nowhere, so nothing about the responses can differ by
+     * value. The safe counterpart to the row above.
+     */
+    private static SqlInjectionScenario jsonBodyIgnoredFilter() {
+        return new SqlInjectionScenario(
+                "json-body-ignored-filter",
+                SAFE,
+                "WAVSEP-style",
+                "/api/items",
+                "{\"filter\":\"active\"}",
+                HttpHeader.JSON_CONTENT_TYPE,
+                () -> jsonBodyHandler("filter", value -> null));
+    }
+
+    /**
+     * A JSON endpoint answering every quote-bearing value with the same canned generic SQL
+     * exception — the WAVSEP honeypot trap carried on a JSON body. Not injectable: the error text
+     * never varies with the probe, so the generic-signature confirmation must recognise it as a
+     * canned rejection and stay quiet.
+     */
+    private static SqlInjectionScenario jsonBodyQuoteServerError() {
+        return new SqlInjectionScenario(
+                "json-body-quote-500",
+                FP_PRONE,
+                "WAVSEP 500ErrorOnIvFailure-style",
+                "/api/items",
+                "{\"id\":\"1\"}",
+                HttpHeader.JSON_CONTENT_TYPE,
+                () ->
+                        jsonBodyHandler(
+                                "id",
+                                value -> {
+                                    if (value.contains("'")) {
+                                        return newFixedLengthResponse(
+                                                Response.Status.INTERNAL_ERROR,
+                                                NanoHTTPD.MIME_HTML,
+                                                "java.sql.SQLException: request failed");
+                                    }
+                                    return null;
+                                }));
+    }
+
+    /**
+     * A NanoHTTPD handler for a one-parameter JSON body endpoint: it reads the named value of the
+     * JSON body and lets the oracle override the response for probe values it cares about,
+     * falling back to the normal page for everything else — the never-interpolated shape.
+     *
+     * @param key the JSON body key holding the parameter under test
+     * @param oracle the response override for a probe value, or null for the normal page
+     * @return the handler
+     */
+    private static NanoServerHandler jsonBodyHandler(
+            String key, Function<String, Response> oracle) {
+        return new NanoServerHandler("/api/items") {
+            @Override
+            protected Response serve(IHTTPSession session) {
+                String value = JSONObject.fromObject(getBody(session)).getString(key);
+                Response overridden = oracle.apply(value);
+                if (overridden != null) {
+                    return overridden;
+                }
+                return newFixedLengthResponse(
+                        Response.Status.OK, NanoHTTPD.MIME_HTML, NORMAL_CONTENT);
+            }
+        };
     }
 
     private static UrlParamValueHandler errorPageOnFalseCondition(int statusCode, String body) {

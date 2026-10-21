@@ -64,9 +64,10 @@ public abstract class AbstractSqlInjectionModularScanRuleTest
     }
 
     /**
-     * Builds the request a corpus scenario is scanned with: a plain GET, or a form POST when the
+     * Builds the request a corpus scenario is scanned with: a plain GET, or a POST when the
      * scenario carries a body, the way the login and admin forms of the applications being modelled
-     * send it.
+     * send it. A scenario may name its body's content type (e.g. {@code application/json}); when it
+     * does not, the body is the urlencoded form those same applications also send.
      *
      * <p>Both the corpus and the metrics runner go through here, so a row cannot be scanned as a
      * GET by one and as a POST by the other - which is how the metrics runner once reported zero
@@ -86,7 +87,11 @@ public abstract class AbstractSqlInjectionModularScanRuleTest
                         scenario.requestTarget(),
                         SqlInjectionScenarioCorpus.NORMAL_CONTENT);
         message.getRequestHeader()
-                .setHeader(HttpHeader.CONTENT_TYPE, HttpHeader.FORM_URLENCODED_CONTENT_TYPE);
+                .setHeader(
+                        HttpHeader.CONTENT_TYPE,
+                        scenario.requestContentType().isEmpty()
+                                ? HttpHeader.FORM_URLENCODED_CONTENT_TYPE
+                                : scenario.requestContentType());
         message.setRequestBody(scenario.requestBody());
         return message;
     }

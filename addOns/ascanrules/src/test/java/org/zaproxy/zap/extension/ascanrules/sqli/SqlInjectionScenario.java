@@ -40,7 +40,9 @@ import org.zaproxy.zap.testutils.NanoServerHandler;
  * @param outcome what the rule is expected to do, and why
  * @param source where the scenario comes from, e.g. {@code zaproxy/zaproxy#8651}
  * @param requestTarget the path and query the rule is initialised with
- * @param requestBody an {@code application/x-www-form-urlencoded} body, empty for a GET request
+ * @param requestBody a request body, empty for a GET request
+ * @param requestContentType the body's content type; empty means {@code
+ *     application/x-www-form-urlencoded}, which every scenario that carries a form body sends
  * @param fixture the server fixture answering the requests of the scenario
  */
 public record SqlInjectionScenario(
@@ -49,7 +51,19 @@ public record SqlInjectionScenario(
         String source,
         String requestTarget,
         String requestBody,
+        String requestContentType,
         Supplier<NanoServerHandler> fixture) {
+
+    /** A scenario whose body is the urlencoded form every existing row sends. */
+    public SqlInjectionScenario(
+            String id,
+            Outcome outcome,
+            String source,
+            String requestTarget,
+            String requestBody,
+            Supplier<NanoServerHandler> fixture) {
+        this(id, outcome, source, requestTarget, requestBody, "", fixture);
+    }
 
     /** What the rule is expected to do with a scenario, and why it is in the corpus. */
     public enum Outcome {

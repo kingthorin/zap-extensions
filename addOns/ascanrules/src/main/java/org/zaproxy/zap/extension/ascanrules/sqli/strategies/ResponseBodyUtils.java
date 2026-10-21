@@ -104,13 +104,13 @@ public final class ResponseBodyUtils {
     private static final String VOLATILE_PLACEHOLDER = "__VOLATILE__";
 
     /**
-     * Normalises per-request volatile regions (CSRF hidden fields, ISO-8601 timestamps) to a
-     * fixed placeholder so rotating tokens do not break response differentials.
+     * Normalises per-request volatile regions (CSRF hidden fields, ISO-8601 timestamps) to a fixed
+     * placeholder so rotating tokens do not break response differentials.
      *
-     * <p>Patterns are intentionally narrow (under-match by design): only hidden-input fields
-     * whose name suggests a CSRF/token role with a long token value, and ISO-8601 timestamp
-     * literals. Anything not matching takes today's comparison path unchanged, so real content
-     * differences are never wiped.
+     * <p>Patterns are intentionally narrow (under-match by design): only hidden-input fields whose
+     * name suggests a CSRF/token role with a long token value, and ISO-8601 timestamp literals.
+     * Anything not matching takes today's comparison path unchanged, so real content differences
+     * are never wiped.
      *
      * @param text the response body to normalise
      * @return the body with matched volatile regions replaced, or empty string if null
@@ -129,10 +129,10 @@ public final class ResponseBodyUtils {
                         .replaceAll("$1" + VOLATILE_PLACEHOLDER + "$2");
         // ISO-8601 timestamps: 2026-01-02T15:04:05 with optional fraction/zone.
         result =
-                Pattern.compile("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?)?")
+                Pattern.compile(
+                                "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?)?")
                         .matcher(result)
                         .replaceAll(VOLATILE_PLACEHOLDER);
         return result;
     }
-
 }

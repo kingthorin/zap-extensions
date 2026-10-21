@@ -79,6 +79,7 @@ class ResponseComparatorUnitTest {
                         baseline, ORIGINAL, control, CONTROL),
                 is(false));
     }
+
     // -- Volatile-token normalisation: rotating CSRF/timestamps must not break the exact path. --
 
     /**
@@ -109,8 +110,8 @@ class ResponseComparatorUnitTest {
     }
 
     /**
-     * ISO-8601 timestamps are volatile the same way tokens are: a render timestamp that moves
-     * every response must not read as a difference on its own.
+     * ISO-8601 timestamps are volatile the same way tokens are: a render timestamp that moves every
+     * response must not read as a difference on its own.
      */
     @Test
     void shouldMatchPagesThatDifferOnlyInAnIsoTimestamp() throws Exception {
@@ -133,8 +134,8 @@ class ResponseComparatorUnitTest {
     }
 
     /**
-     * The strip must not manufacture sameness: a real content difference alongside rotating
-     * tokens is still a different outcome.
+     * The strip must not manufacture sameness: a real content difference alongside rotating tokens
+     * is still a different outcome.
      */
     @Test
     void shouldNotMatchPagesWithARealDifferenceBehindRotatingTokens() throws Exception {
@@ -157,8 +158,6 @@ class ResponseComparatorUnitTest {
                         baseline, ORIGINAL, control, CONTROL),
                 is(false));
     }
-
-
 
     // -- Volatile templates: learn what moves between two renders, compare the rest exactly. --
 
