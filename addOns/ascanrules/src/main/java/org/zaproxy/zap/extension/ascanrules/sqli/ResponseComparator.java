@@ -355,10 +355,14 @@ public class ResponseComparator {
 
         String stable =
                 ResponseBodyUtils.stripAllEncodedForms(
-                        baselineBody, baselineOriginalValue, baselineValueSent);
+                        ResponseBodyUtils.stripVolatileTokens(baselineBody),
+                        baselineOriginalValue,
+                        baselineValueSent);
         String moving =
                 ResponseBodyUtils.stripAllEncodedForms(
-                        replayBody, replayOriginalValue, replayValueSent);
+                        ResponseBodyUtils.stripVolatileTokens(replayBody),
+                        replayOriginalValue,
+                        replayValueSent);
         if (stable.equals(moving)) {
             return null;
         }
@@ -475,7 +479,9 @@ public class ResponseComparator {
 
         String body =
                 ResponseBodyUtils.stripAllEncodedForms(
-                        b.getResponseBody().toString(), bOriginalValue, bValueSent);
+                        ResponseBodyUtils.stripVolatileTokens(b.getResponseBody().toString()),
+                        bOriginalValue,
+                        bValueSent);
         if (body.length() > MAX_TEMPLATE_BODY_LENGTH) {
             return false;
         }

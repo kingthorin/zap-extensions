@@ -22,7 +22,11 @@ package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.parosproxy.paros.core.scanner.AbstractPlugin;
@@ -31,6 +35,30 @@ import org.parosproxy.paros.core.scanner.AbstractPlugin;
 public final class ResponseBodyUtils {
 
     private ResponseBodyUtils() {}
+
+    /**
+     * Bounded cache of volatile-normalised bodies: normalisation is a pure function of the input.
+     */
+    private static final int VOLATILE_CACHE_SIZE = 64;
+
+    private static final Map<String, String> VOLATILE_CACHE =
+            Collections.synchronizedMap(
+                    new LinkedHashMap<String, String>(16, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                            return size() > VOLATILE_CACHE_SIZE;
+                        }
+                    });
+
+    private static final Pattern INPUT_TAG_PATTERN =
+            Pattern.compile("<input\\b[^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern VALUE_PATTERN =
+            Pattern.compile("(?i)(value\\s*=\\s*[\"'])([^\"'\\s<>]{16,})([\"'])");
+    private static final Pattern NAME_PATTERN =
+            Pattern.compile("(?i)name\\s*=\\s*[\"']?([^\"'\\s>]+)[\"']?");
+    private static final Pattern ISO_TIMESTAMP_PATTERN =
+            Pattern.compile(
+                    "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?)?");
 
     /**
      * Removes all occurrences of {@code needle} from {@code text}, case-insensitive.
@@ -107,10 +135,9 @@ public final class ResponseBodyUtils {
      * Normalises per-request volatile regions (CSRF hidden fields, ISO-8601 timestamps) to a fixed
      * placeholder so rotating tokens do not break response differentials.
      *
-     * <p>Patterns are intentionally narrow (under-match by design): only hidden-input fields whose
-     * name suggests a CSRF/token role with a long token value, and ISO-8601 timestamp literals.
-     * Anything not matching takes today's comparison path unchanged, so real content differences
-     * are never wiped.
+     * <p>Results are memoised: normalisation is a pure function of the input body, so repeated
+     * calls on the same body (exact path followed by template derivation/matching) reuse the cached
+     * value instead of re-running the regex passes.
      *
      * @param text the response body to normalise
      * @return the body with matched volatile regions replaced, or empty string if null
@@ -120,19 +147,41 @@ public final class ResponseBodyUtils {
             return text == null ? "" : text;
         }
 
+        String cached = VOLATILE_CACHE.get(text);
+        if (cached != null) {
+            return cached;
+        }
+
         String result = text;
-        // Hidden-input CSRF: name hints csrf/token, value is a 16+ char token.
-        result =
-                Pattern.compile(
-                                "(?i)(<input[^>]*name\\s*=\\s*[\"']?(?:csrf|csrf_token|_token|authenticity_token)[\"']?[^>]*value\\s*=\\s*[\"'])[A-Za-z0-9+/=_-]{16,}([\"'])")
-                        .matcher(result)
-                        .replaceAll("$1" + VOLATILE_PLACEHOLDER + "$2");
+        // Hidden-input CSRF tokens: normalise the value of any <input> whose name suggests a
+        // CSRF/token role, regardless of attribute order, so rotating tokens do not break diffs.
+        Matcher inputMatcher = INPUT_TAG_PATTERN.matcher(result);
+        StringBuilder sb = new StringBuilder();
+        while (inputMatcher.find()) {
+            String tag = inputMatcher.group();
+            String replacement = tag;
+            if (isCsrfTokenInput(tag)) {
+                replacement =
+                        VALUE_PATTERN.matcher(tag).replaceAll("$1" + VOLATILE_PLACEHOLDER + "$3");
+            }
+            inputMatcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        }
+        inputMatcher.appendTail(sb);
+        result = sb.toString();
+
         // ISO-8601 timestamps: 2026-01-02T15:04:05 with optional fraction/zone.
-        result =
-                Pattern.compile(
-                                "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?)?")
-                        .matcher(result)
-                        .replaceAll(VOLATILE_PLACEHOLDER);
+        result = ISO_TIMESTAMP_PATTERN.matcher(result).replaceAll(VOLATILE_PLACEHOLDER);
+
+        VOLATILE_CACHE.put(text, result);
         return result;
+    }
+
+    private static boolean isCsrfTokenInput(String tag) {
+        Matcher nameMatcher = NAME_PATTERN.matcher(tag);
+        if (nameMatcher.find()) {
+            String name = nameMatcher.group(1).toLowerCase();
+            return name.contains("csrf") || name.contains("token");
+        }
+        return false;
     }
 }
