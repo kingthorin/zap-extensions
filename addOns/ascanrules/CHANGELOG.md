@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - SQL Injection (Modular, Experimental): a server error (5xx) is now only treated as evidence of injection when the response body mentions the database, so generic input-validation errors no longer raise alerts, and raw SQLite engine messages (for example `near "...": syntax error`) are recognised.
 - SQL Injection (Modular, Experimental): added conditional-error blind detection — a database error that appears only when an injected condition is true (and is absent when it is false) is now treated as evidence of injection, reaching blind shapes without any time delay.
 - SQL Injection (Modular, Experimental): a generic database error signature (for example `java.sql.SQLException`) is now only treated as evidence of injection when the error text changes with the probe — a canned message that is identical for two different probe values no longer raises an alert.
+- SQL Injection (Modular, Experimental): boolean-based detection now sends a control request that re-checks the baseline before alerting, suppressing differentials caused by volatile or unstable responses.
 
 ## [83] - 2026-06-26
 ### Changed

@@ -139,6 +139,30 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
                             falseValue);
 
             if (falseDiffersFromBaseline) {
+                // Control request: re-send the original value to confirm the baseline is still
+                // stable. A page that moved between the AND_TRUE and the AND_FALSE probes is
+                // volatile/differential noise rather than an injection, so suppress it instead of
+                // alerting. Charged to this technique's budget like any other probe.
+                if (used + 1 <= budget) {
+                    HttpMessage controlMsg = context.newMessage();
+                    context.setParam(controlMsg, originalValue);
+                    context.sendAndReceive(controlMsg);
+                    used++;
+                    boolean controlMatchesBaseline =
+                            comparator.matches(
+                                    template,
+                                    baseline,
+                                    originalValue,
+                                    originalValue,
+                                    controlMsg,
+                                    originalValue,
+                                    originalValue);
+                    if (!controlMatchesBaseline) {
+                        context.recordSuppressedDifferential();
+                        continue;
+                    }
+                }
+
                 if (!comparator.isDifferenceExplainedByErrorStatus(baseline, falseMsg)) {
                     // AND_TRUE~baseline AND AND_FALSE!=baseline: injectable. Alert.
                     // An error page for AND_FALSE alone -- rate limited, blocked by a WAF, timed
