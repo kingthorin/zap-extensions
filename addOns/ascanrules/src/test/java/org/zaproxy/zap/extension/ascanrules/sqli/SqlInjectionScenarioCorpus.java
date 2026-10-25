@@ -85,6 +85,9 @@ public final class SqlInjectionScenarioCorpus {
                 volatilePageBooleanInjection(),
                 volatilePageExpressionInjection(),
                 volatilePageOrderByInjection(),
+                volatilePageCounterNoInjection(),
+                wildcardSearchNoInjection(),
+                staticAssetRedirectOnPayload(),
                 reflectingUnionInterpolation(),
                 wordpressTaxQuery(),
                 wordPressSearchOrderBy(),
@@ -684,8 +687,8 @@ public final class SqlInjectionScenarioCorpus {
 
     /**
      * A NanoHTTPD handler for a one-parameter JSON body endpoint: it reads the named value of the
-     * JSON body and lets the oracle override the response for probe values it cares about,
-     * falling back to the normal page for everything else — the never-interpolated shape.
+     * JSON body and lets the oracle override the response for probe values it cares about, falling
+     * back to the normal page for everything else — the never-interpolated shape.
      *
      * @param key the JSON body key holding the parameter under test
      * @param oracle the response override for a probe value, or null for the normal page
@@ -762,4 +765,95 @@ public final class SqlInjectionScenarioCorpus {
         }
         return value.substring(0, end);
     }
+    /**
+     * A page whose only dynamic content is a per-request counter, with no injection anywhere
+     * (zaproxy/zaproxy#8745): the body changes on every request, so an exact comparison alerts,
+     * but the volatile template learns the counter and holds the rest to an exact standard.
+     */
+    private static SqlInjectionScenario volatilePageCounterNoInjection() {
+        return new SqlInjectionScenario(
+                "volatile-page-counter-no-injection",
+                FP_PRONE,
+                "zaproxy/zaproxy#8745",
+                "/counter?id=1",
+                "",
+                SqlInjectionScenarioCorpus::volatileCounterPage);
+    }
+
+    private static NanoServerHandler volatileCounterPage() {
+        return new NanoServerHandler("/counter") {
+            private final AtomicInteger renderCount = new AtomicInteger();
+
+            @Override
+            protected NanoHTTPD.Response serve(NanoHTTPD.IHTTPSession session) {
+                return newFixedLengthResponse(
+                        NanoHTTPD.Response.Status.OK,
+                        NanoHTTPD.MIME_HTML,
+                        "Widget " + renderCount.incrementAndGet());
+            }
+        };
+    }
+
+    /**
+     * A search field whose empty value returns every row and whose wildcard inputs are passed
+     * straight into a {@code LIKE}: {@code %} returns every row and {@code XYZABCDEFGHIJ} none.
+     * The LIKE-condition pair is a tautology/contradiction on top of the baseline, which is the
+     * shape reported as zaproxy/zaproxy#8525 (the wildcard false positive).
+     */
+    private static SqlInjectionScenario wildcardSearchNoInjection() {
+        return new SqlInjectionScenario(
+                "wildcard-search-no-injection",
+                FP_PRONE,
+                "zaproxy/zaproxy#8525",
+                "/search?q=",
+                "",
+                () ->
+                        UrlParamValueHandler.builder()
+                                .targetPath("/search")
+                                .targetParam("q")
+                                .when(
+                                        param("q")
+                                                .matches(
+                                                        value ->
+                                                                value == null
+                                                                        || value.trim().isEmpty()
+                                                                        || (value.contains("%"))))
+                                .thenReturn(200, "All rows")
+                                .when(
+                                        param("q")
+                                                .matches(
+                                                        value ->
+                                                                value != null
+                                                                        && value.contains(
+                                                                                "XYZABCDEFGHIJ")))
+                                .thenReturn(200, "No rows")
+                                .fallbackHtmlResponse("No rows")
+                                .build());
+    }
+
+    /**
+     * A static asset served with a cache-buster parameter, where payloads that look like SQL are
+     * answered with a redirect instead of the asset (zaproxy/zaproxy#8636).
+     */
+    private static SqlInjectionScenario staticAssetRedirectOnPayload() {
+        return new SqlInjectionScenario(
+                "static-asset-redirect-on-payload",
+                FP_PRONE,
+                "zaproxy/zaproxy#8636",
+                "/static/app.min.js?v=8f2a1c",
+                "",
+                () ->
+                        UrlParamValueHandler.builder()
+                                .targetPath("/static/app.min.js")
+                                .targetParam("v")
+                                .when(
+                                        param("v")
+                                                .matches(
+                                                        SqlInjectionScenarioCorpus
+                                                                ::looksLikePayload))
+                                .thenReturn(301, "Moved")
+                                .fallbackHtmlResponse("var app={};")
+                                .build());
+    }
+
 }

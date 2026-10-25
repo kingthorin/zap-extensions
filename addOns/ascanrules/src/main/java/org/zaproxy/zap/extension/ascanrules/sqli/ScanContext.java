@@ -21,6 +21,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli;
 
 import java.io.IOException;
 import org.parosproxy.paros.core.scanner.AbstractPlugin.AlertBuilder;
+import org.parosproxy.paros.core.scanner.Plugin.AlertThreshold;
 import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.model.TechSet;
@@ -86,6 +87,12 @@ public interface ScanContext {
      * message budgets.
      */
     AttackStrength getAttackStrength();
+
+    /**
+     * Current alert threshold, used by strategies to gate noisy/FP-prone payload families (e.g. the
+     * LIKE family) so they only run when the user has opted into low-evidence scanning.
+     */
+    AlertThreshold getAlertThreshold();
 
     /**
      * Sets the current technique identifier so budget tracking is per-technique. Called by the scan

@@ -21,6 +21,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
 import java.util.List;
 import java.util.stream.Stream;
+import org.parosproxy.paros.core.scanner.Plugin.AlertThreshold;
 import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 
 /**
@@ -72,20 +73,25 @@ public class BooleanConditionPayloads {
      * LIKE-attack pairs mirroring baseline rule 40018's {@code SQL_LIKE} / {@code SQL_LIKE_SAFE}
      * payloads. Baseline only runs these at HIGH strength ("will not run all of the LIKE attacks..
      * these are done at high"), so they're kept separate from {@link #CONDITIONS} and only appended
-     * when the scan runs at HIGH or INSANE.
+     * when the scan runs at HIGH or INSANE strength and the alert threshold is {@link
+     * AlertThreshold#LOW} (the family is FP-prone on wildcard/contains searches, so it only runs when
+     * the user has opted into low-evidence scanning).
      */
     public static final List<Condition> LIKE_CONDITIONS =
             List.of(new Condition("%", "XYZABCDEFGHIJ"));
 
     /**
-     * The conditions to run at the given attack strength: always {@link #CONDITIONS}, plus the LIKE
-     * family only at {@link AttackStrength#HIGH} / {@link AttackStrength#INSANE}.
+     * The conditions to run at the given attack strength and alert threshold: always {@link
+     * #CONDITIONS}, plus the LIKE family only at {@link AttackStrength#HIGH} / {@link
+     * AttackStrength#INSANE} strength when the threshold is {@link AlertThreshold#LOW}.
      *
      * @param strength the current attack strength
+     * @param threshold the current alert threshold
      * @return the conditions to probe
      */
-    public static List<Condition> conditionsFor(AttackStrength strength) {
-        if (strength == AttackStrength.HIGH || strength == AttackStrength.INSANE) {
+    public static List<Condition> conditionsFor(AttackStrength strength, AlertThreshold threshold) {
+        if ((strength == AttackStrength.HIGH || strength == AttackStrength.INSANE)
+                && threshold == AlertThreshold.LOW) {
             return Stream.concat(CONDITIONS.stream(), LIKE_CONDITIONS.stream()).toList();
         }
         return CONDITIONS;

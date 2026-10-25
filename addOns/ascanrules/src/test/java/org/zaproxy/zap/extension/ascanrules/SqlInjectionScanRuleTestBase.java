@@ -849,6 +849,7 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
         void shouldAlertLikeAttacksStrengthHigh() throws Exception {
             // Given
             rule.setAttackStrength(AttackStrength.HIGH);
+            rule.setAlertThreshold(AlertThreshold.LOW);
             String param = "param";
             String normalValue = "payload";
 

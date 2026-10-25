@@ -69,7 +69,7 @@ class ExpressionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModul
     @Test
     void shouldAlertOnVolatilePageWhenTemplateAbsorbsCounter() throws Exception {
         // Given: a numeric page evaluating arithmetic while rotating a per-request counter
-        // line. Without the template the first variant never matches the baseline (FN);
+        // line (zaproxy/zaproxy#8745). Without the template the first variant never matches the baseline (FN);
         // with it the stable cells carry the ADD-pair differential (3-2→row 1 vs 4-2→row 2).
         String path = "/sqli/expression/volatile/";
         nano.addHandler(new VolatileExpressionHandler(path, "item"));
@@ -85,7 +85,7 @@ class ExpressionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModul
     @Test
     void shouldNotAlertOnVolatilePageWhenExpressionIsNotEvaluated() throws Exception {
         // Given: a volatile page ignoring arithmetic — the counter moves but the row never
-        // does, so the template must absorb everything and stay silent.
+        // does, so the template must absorb everything and stay silent (zaproxy/zaproxy#8745).
         String path = "/sqli/expression/volatile-static/";
         nano.addHandler(
                 new NanoServerHandler(path) {

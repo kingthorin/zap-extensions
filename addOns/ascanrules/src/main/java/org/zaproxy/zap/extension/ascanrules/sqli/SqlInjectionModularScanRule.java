@@ -31,6 +31,7 @@ import org.apache.logging.log4j.Logger;
 import org.parosproxy.paros.Constant;
 import org.parosproxy.paros.core.scanner.AbstractAppParamPlugin;
 import org.parosproxy.paros.core.scanner.AbstractPlugin.AlertBuilder;
+import org.parosproxy.paros.core.scanner.Plugin.AlertThreshold;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.core.scanner.Category;
 import org.parosproxy.paros.core.scanner.Kb;
@@ -520,7 +521,12 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     }
 
     @Override
+    public AlertThreshold getAlertThreshold() {
+        return super.getAlertThreshold();
+    }
+    @Override
     public int getRemainingBudget() {
+
         if (techniqueBudgets != null && techniqueBudgets.containsKey(currentTechnique)) {
             return techniqueBudgets.get(currentTechnique);
         }
