@@ -60,6 +60,14 @@ public final class ResponseBodyUtils {
             Pattern.compile(
                     "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?)?");
 
+    private static final Pattern UUID_PATTERN =
+            Pattern.compile(
+                    "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b");
+    private static final Pattern META_TAG_PATTERN =
+            Pattern.compile("<meta\\b[^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern META_CONTENT_PATTERN =
+            Pattern.compile("(?i)(content\\s*=\\s*[\"'])([^\"'\\s<>]{16,})([\"'])");
+
     /**
      * Removes all occurrences of {@code needle} from {@code text}, case-insensitive.
      *
@@ -169,8 +177,28 @@ public final class ResponseBodyUtils {
         inputMatcher.appendTail(sb);
         result = sb.toString();
 
+        // CSRF <meta> tags (e.g. <meta name="csrf-token" content="...">): same rule as inputs.
+        Matcher metaMatcher = META_TAG_PATTERN.matcher(result);
+        sb = new StringBuilder();
+        while (metaMatcher.find()) {
+            String tag = metaMatcher.group();
+            String replacement = tag;
+            if (isCsrfTokenInput(tag)) {
+                replacement =
+                        META_CONTENT_PATTERN
+                                .matcher(tag)
+                                .replaceAll("$1" + VOLATILE_PLACEHOLDER + "$3");
+            }
+            metaMatcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        }
+        metaMatcher.appendTail(sb);
+        result = sb.toString();
+
         // ISO-8601 timestamps: 2026-01-02T15:04:05 with optional fraction/zone.
         result = ISO_TIMESTAMP_PATTERN.matcher(result).replaceAll(VOLATILE_PLACEHOLDER);
+
+        // UUIDs (request/correlation ids) regenerate on every render.
+        result = UUID_PATTERN.matcher(result).replaceAll(VOLATILE_PLACEHOLDER);
 
         VOLATILE_CACHE.put(text, result);
         return result;

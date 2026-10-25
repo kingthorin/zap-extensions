@@ -74,8 +74,8 @@ public class BooleanConditionPayloads {
      * payloads. Baseline only runs these at HIGH strength ("will not run all of the LIKE attacks..
      * these are done at high"), so they're kept separate from {@link #CONDITIONS} and only appended
      * when the scan runs at HIGH or INSANE strength and the alert threshold is {@link
-     * AlertThreshold#LOW} (the family is FP-prone on wildcard/contains searches, so it only runs when
-     * the user has opted into low-evidence scanning).
+     * AlertThreshold#LOW} (the family is FP-prone on wildcard/contains searches, so it only runs
+     * when the user has opted into low-evidence scanning).
      */
     public static final List<Condition> LIKE_CONDITIONS =
             List.of(new Condition("%", "XYZABCDEFGHIJ"));

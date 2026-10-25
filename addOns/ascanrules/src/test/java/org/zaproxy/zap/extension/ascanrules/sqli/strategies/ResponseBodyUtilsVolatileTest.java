@@ -50,6 +50,27 @@ class ResponseBodyUtilsVolatileTest {
     }
 
     @Test
+    void normalisesUuid() {
+        String input = "request-id 123e4567-e89b-12d3-a456-426614174000 done";
+        assertThat(
+                ResponseBodyUtils.stripVolatileTokens(input), is("request-id __VOLATILE__ done"));
+    }
+
+    @Test
+    void normalisesCsrfMetaTag() {
+        String input = "<meta name=\"csrf-token\" content=\"aB3dE5fG7hJ9kL1mN4\">";
+        assertThat(
+                ResponseBodyUtils.stripVolatileTokens(input),
+                is("<meta name=\"csrf-token\" content=\"__VOLATILE__\">"));
+    }
+
+    @Test
+    void leavesNonCsrfMetaTagUntouched() {
+        String input = "<meta name=\"description\" content=\"aB3dE5fG7hJ9kL1mN4\">";
+        assertThat(ResponseBodyUtils.stripVolatileTokens(input), is(input));
+    }
+
+    @Test
     void leavesShortValuesUntouched() {
         String input = "<input name=\"csrf_token\" value=\"short\"/>";
         assertThat(ResponseBodyUtils.stripVolatileTokens(input), is(input));

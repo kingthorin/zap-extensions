@@ -765,10 +765,11 @@ public final class SqlInjectionScenarioCorpus {
         }
         return value.substring(0, end);
     }
+
     /**
      * A page whose only dynamic content is a per-request counter, with no injection anywhere
-     * (zaproxy/zaproxy#8745): the body changes on every request, so an exact comparison alerts,
-     * but the volatile template learns the counter and holds the rest to an exact standard.
+     * (zaproxy/zaproxy#8745): the body changes on every request, so an exact comparison alerts, but
+     * the volatile template learns the counter and holds the rest to an exact standard.
      */
     private static SqlInjectionScenario volatilePageCounterNoInjection() {
         return new SqlInjectionScenario(
@@ -796,9 +797,9 @@ public final class SqlInjectionScenarioCorpus {
 
     /**
      * A search field whose empty value returns every row and whose wildcard inputs are passed
-     * straight into a {@code LIKE}: {@code %} returns every row and {@code XYZABCDEFGHIJ} none.
-     * The LIKE-condition pair is a tautology/contradiction on top of the baseline, which is the
-     * shape reported as zaproxy/zaproxy#8525 (the wildcard false positive).
+     * straight into a {@code LIKE}: {@code %} returns every row and {@code XYZABCDEFGHIJ} none. The
+     * LIKE-condition pair is a tautology/contradiction on top of the baseline, which is the shape
+     * reported as zaproxy/zaproxy#8525 (the wildcard false positive).
      */
     private static SqlInjectionScenario wildcardSearchNoInjection() {
         return new SqlInjectionScenario(
@@ -855,5 +856,4 @@ public final class SqlInjectionScenarioCorpus {
                                 .fallbackHtmlResponse("var app={};")
                                 .build());
     }
-
 }

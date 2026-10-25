@@ -60,7 +60,8 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
         boolean templateAttempted = false;
 
         for (BooleanConditionPayloads.Condition condition :
-                BooleanConditionPayloads.conditionsFor(context.getAttackStrength(), context.getAlertThreshold())) {
+                BooleanConditionPayloads.conditionsFor(
+                        context.getAttackStrength(), context.getAlertThreshold())) {
             if (context.isStopped() || used + 2 > budget) {
                 return false;
             }
