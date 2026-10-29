@@ -47,7 +47,14 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
     void shouldAlertWhenBooleanConditionControlsResponse() throws Exception {
         // Given
         String path = "/sqli/boolean/injectable/";
-        nano.addHandler(new BooleanInjectableHandler(path, "id"));
+        nano.addHandler(
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("id")
+                        .when(param("id").matches(SqlInjectionScenarioCorpus::isFalseCondition))
+                        .thenReturnHtml("")
+                        .fallbackHtmlResponse(TRUE_CONDITION_CONTENT)
+                        .build());
         rule.init(getHttpMessage(path + "?id=1"), parent);
 
         // When
@@ -103,12 +110,11 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
         // are all identical and there's no differential to detect.
         String path = "/sqli/boolean/static/";
         nano.addHandler(
-                new NanoServerHandler(path) {
-                    @Override
-                    protected Response serve(IHTTPSession session) {
-                        return newFixedLengthResponse("Always the same content, id ignored");
-                    }
-                });
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("id")
+                        .fallbackHtmlResponse("Always the same content, id ignored")
+                        .build());
         rule.init(getHttpMessage(path + "?id=1"), parent);
 
         // When
@@ -176,34 +182,6 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
                 .thenReturn(statusCode, body)
                 .fallbackHtmlResponse(TRUE_CONDITION_CONTENT)
                 .build();
-    }
-
-    /**
-     * Simulates a page vulnerable to boolean-based blind SQLi: a true condition reproduces the
-     * baseline content, a false condition returns different (empty) content, anything else is
-     * treated like the baseline.
-     */
-    private static class BooleanInjectableHandler extends NanoServerHandler {
-
-        private final String param;
-
-        BooleanInjectableHandler(String path, String param) {
-            super(path);
-            this.param = param;
-        }
-
-        @Override
-        protected Response serve(IHTTPSession session) {
-            // Note: deliberately does NOT reflect the raw parameter value into the body -- real
-            // vulnerable pages return the same row content regardless of the exact injected
-            // string, and reflecting it back here would make ComparableResponse see every
-            // response as different just because the payload text differs.
-            String value = getFirstParamValue(session, param);
-            if (SqlInjectionScenarioCorpus.isFalseCondition(value)) {
-                return newFixedLengthResponse("");
-            }
-            return newFixedLengthResponse(TRUE_CONDITION_CONTENT);
-        }
     }
 
     /** The body a page returns for the original value and for a true condition. */

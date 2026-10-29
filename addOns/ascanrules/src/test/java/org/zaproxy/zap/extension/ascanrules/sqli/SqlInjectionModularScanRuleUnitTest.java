@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.parosproxy.paros.network.HttpHeader;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.testutils.NanoServerHandler;
+import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
 /**
  * Unit test for {@link SqlInjectionModularScanRule} itself -- id/metadata wiring and the
@@ -64,12 +65,11 @@ class SqlInjectionModularScanRuleUnitTest extends AbstractSqlInjectionModularSca
         // Given
         String path = "/sqli/scaffold/";
         nano.addHandler(
-                new NanoServerHandler(path) {
-                    @Override
-                    protected Response serve(IHTTPSession session) {
-                        return newFixedLengthResponse("ok");
-                    }
-                });
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("id")
+                        .fallbackHtmlResponse("ok")
+                        .build());
         rule.init(getHttpMessage(path + "?id=1"), parent);
 
         // When

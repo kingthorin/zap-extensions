@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
 import org.zaproxy.zap.testutils.NanoServerHandler;
+import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
 /**
  * Integration test for {@link ConditionalErrorBasedDetectionStrategy}, exercised through the full
@@ -94,12 +95,11 @@ class ConditionalErrorBasedDetectionStrategyUnitTest
         // Given
         String path = "/sqli/conderror/ordinary/";
         nano.addHandler(
-                new NanoServerHandler(path) {
-                    @Override
-                    protected Response serve(IHTTPSession session) {
-                        return newFixedLengthResponse("Ordinary content, parameter ignored");
-                    }
-                });
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("id")
+                        .fallbackHtmlResponse("Ordinary content, parameter ignored")
+                        .build());
         rule.init(getHttpMessage(path + "?id=1"), parent);
 
         // When

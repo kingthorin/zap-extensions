@@ -25,6 +25,7 @@ import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.zaproxy.zap.testutils.RequestCondition.param;
 
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
@@ -33,6 +34,7 @@ import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
 import org.zaproxy.zap.testutils.NanoServerHandler;
+import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
 /**
  * Integration test for {@link OrderByDetectionStrategy}, exercised through the full {@link
@@ -49,7 +51,14 @@ class OrderByDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRu
         // nothing, while an out-of-range index fails while the query is planned -- the differential
         // the strategy's second oracle keys on.
         String path = "/sqli/orderby/index-rejected/";
-        nano.addHandler(new OrderByIndexHandler(path, "username"));
+        nano.addHandler(
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("username")
+                        .when(param("username").matches(v -> v.contains("ORDER BY 99")))
+                        .thenReturnHtml(REJECTED_INDEX_VIEW)
+                        .fallbackHtmlResponse(DEFAULT_VIEW)
+                        .build());
         rule.setAttackStrength(AttackStrength.HIGH);
         rule.init(getHttpMessage(path + "?username=test"), parent);
 
@@ -66,12 +75,11 @@ class OrderByDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRu
         // Given: the parameter is not used at all, so neither ORDER BY index can move the response.
         String path = "/sqli/orderby/static/";
         nano.addHandler(
-                new NanoServerHandler(path) {
-                    @Override
-                    protected Response serve(IHTTPSession session) {
-                        return newFixedLengthResponse("Default view, parameter not used");
-                    }
-                });
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("username")
+                        .fallbackHtmlResponse("Default view, parameter not used")
+                        .build());
         rule.setAttackStrength(AttackStrength.HIGH);
         rule.init(getHttpMessage(path + "?username=test"), parent);
 
@@ -121,27 +129,9 @@ class OrderByDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRu
      * different fallback page. The body deliberately avoids SQL error text so the error-based
      * strategy cannot be the one raising the alert.
      */
-    private static class OrderByIndexHandler extends NanoServerHandler {
+    private static final String DEFAULT_VIEW = "Default view, no records to display";
 
-        private static final String DEFAULT_VIEW = "Default view, no records to display";
-        private static final String REJECTED_INDEX_VIEW = "Fallback page for an unusable query";
-
-        private final String param;
-
-        OrderByIndexHandler(String path, String param) {
-            super(path);
-            this.param = param;
-        }
-
-        @Override
-        protected Response serve(IHTTPSession session) {
-            String value = getFirstParamValue(session, param);
-            if (value != null && value.contains("ORDER BY 99")) {
-                return newFixedLengthResponse(REJECTED_INDEX_VIEW);
-            }
-            return newFixedLengthResponse(DEFAULT_VIEW);
-        }
-    }
+    private static final String REJECTED_INDEX_VIEW = "Fallback page for an unusable query";
 
     /**
      * An ORDER BY position page rotating a per-request counter line: {@code ASC} and a valid index

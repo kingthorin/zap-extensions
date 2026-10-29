@@ -58,7 +58,12 @@ class ExpressionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModul
     @Test
     void shouldNotAlertWhenExpressionIsNotEvaluated() throws Exception {
         String path = "/sqli/expression/safe/";
-        nano.addHandler(new NonExpressionEvaluatingHandler(path, "id"));
+        nano.addHandler(
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("id")
+                        .fallbackHtmlResponse("User ID: 1, Data: Secret Info")
+                        .build());
         rule.init(getHttpMessage(path + "?id=1"), parent);
 
         rule.scan();
@@ -318,23 +323,6 @@ class ExpressionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModul
                 return Integer.parseInt(parts[0].trim()) / Integer.parseInt(parts[1].trim());
             }
             return Integer.parseInt(expr);
-        }
-    }
-
-    /** Handler that doesn't evaluate expressions - just returns the same content for all values. */
-    private static class NonExpressionEvaluatingHandler extends NanoServerHandler {
-        private final String param;
-
-        NonExpressionEvaluatingHandler(String path, String param) {
-            super(path);
-            this.param = param;
-        }
-
-        @Override
-        protected Response serve(IHTTPSession session) {
-            String value = getFirstParamValue(session, param);
-            // Always return the same content, ignoring the parameter
-            return NanoHTTPD.newFixedLengthResponse("User ID: 1, Data: Secret Info");
         }
     }
 }

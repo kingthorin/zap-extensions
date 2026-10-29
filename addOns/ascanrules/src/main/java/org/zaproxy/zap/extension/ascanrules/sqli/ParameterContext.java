@@ -33,8 +33,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli;
  * <p>It also carried a {@code dynamicContentVariance}, for an adaptive comparison threshold. That
  * was deleted rather than wired, because it was not a variance: it was derived from a single
  * response's length and whether it echoed the value, whereas measuring how much a page's content
- * moves takes two or more samples of the <em>same</em> request (commonlib's {@code
- * ComparableResponse.measureResponseVariance}, which needs a list). Guessing one number from one
+ * moves takes two or more samples of the <em>same</em> request. Guessing one number from one
  * response and then loosening a detection threshold on it would trade real findings for imaginary
  * ones. A page whose answers move has to be measured as such, by sending it twice.
  */

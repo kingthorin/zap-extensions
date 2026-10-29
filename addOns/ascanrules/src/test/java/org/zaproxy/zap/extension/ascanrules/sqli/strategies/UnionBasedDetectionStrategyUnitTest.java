@@ -34,6 +34,7 @@ import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.testutils.NanoServerHandler;
+import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
 /**
  * Integration test for {@link UnionBasedDetectionStrategy} based on WAVSEP test case:
@@ -64,12 +65,11 @@ class UnionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
         // nothing for the UNION strategy to exploit, so the rule must stay quiet.
         String path = "/sqli/union/search/";
         nano.addHandler(
-                new NanoServerHandler(path) {
-                    @Override
-                    protected Response serve(IHTTPSession session) {
-                        return newFixedLengthResponse(normalResponse());
-                    }
-                });
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("msg")
+                        .fallbackHtmlResponse(normalResponse())
+                        .build());
         rule.init(getHttpMessage(path + "?msg=hello"), parent);
 
         rule.scan();
