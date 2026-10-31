@@ -21,6 +21,18 @@ The following alpha status passive scan rules are included in this add-on:
 Latest code: <a href="https://github.com/zaproxy/zap-extensions/blob/main/addOns/pscanrulesAlpha/src/main/java/org/zaproxy/zap/extension/pscanrulesAlpha/Base64Disclosure.java">Base64Disclosure.java</a><br>
 Alert ID: <a href="https://www.zaproxy.org/docs/alerts/10094/">10094</a>.
 
+<H2 id="id-10005">Secrets Disclosure</H2>
+<p>Detects secrets (API keys, tokens, private keys, etc.) disclosed in responses (images, fonts and binary content, which is content with more than 1% control characters such as NUL, are ignored) and in requests (the query string and body, not the headers), using the patterns of the default
+<a href="https://github.com/gitleaks/gitleaks">Gitleaks</a> configuration (<code>gitleaks.toml</code>), which is bundled with the add-on
+and updated automatically.</p>
+<p>The Gitleaks keywords, entropy, stopwords and allowlists are honoured. The allowlist paths (for example vendored libraries) are matched against the request path, and are only applied at High threshold. Commit allowlists are not applicable.</p>
+<p>The generic API key rule (<code>generic-api-key</code>) is only used at Low threshold, as it is slow on large responses and prone to false positives.</p>
+<p>Latest code:
+ <a href="https://github.com/zaproxy/zap-extensions/blob/main/addOns/pscanrulesAlpha/src/main/java/org/zaproxy/zap/extension/pscanrulesAlpha/SecretsDisclosureScanRule.java">SecretsDisclosureScanRule.java</a>
+ <br>
+ Alert ID: <a href="https://www.zaproxy.org/docs/alerts/10005/">10005</a>.
+</p>
+
 <H2 id="id-90005">Fetch Metadata Request Headers Scan Rule</H2>
 Fetch Metadata Request headers are HTTP request headers that provide additional information about a request's origin.
 This additional information helps the server to implement resource isolation policy, allowing external sites to request only
