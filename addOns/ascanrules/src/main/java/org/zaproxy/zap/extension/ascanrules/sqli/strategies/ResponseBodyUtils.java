@@ -22,10 +22,7 @@ package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringEscapeUtils;
@@ -35,20 +32,6 @@ import org.parosproxy.paros.core.scanner.AbstractPlugin;
 public final class ResponseBodyUtils {
 
     private ResponseBodyUtils() {}
-
-    /**
-     * Bounded cache of volatile-normalised bodies: normalisation is a pure function of the input.
-     */
-    private static final int VOLATILE_CACHE_SIZE = 64;
-
-    private static final Map<String, String> VOLATILE_CACHE =
-            Collections.synchronizedMap(
-                    new LinkedHashMap<String, String>(16, 0.75f, true) {
-                        @Override
-                        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
-                            return size() > VOLATILE_CACHE_SIZE;
-                        }
-                    });
 
     private static final Pattern INPUT_TAG_PATTERN =
             Pattern.compile("<input\\b[^>]*>", Pattern.CASE_INSENSITIVE);
@@ -113,24 +96,24 @@ public final class ResponseBodyUtils {
 
         for (String pattern : ordered) {
             // Strip the literal pattern
-            result = result.replaceAll("\\Q" + pattern + "\\E", "");
+            result = result.replace(pattern, "");
 
             // Strip URL-encoded form (UTF-8)
             String urlEncoded = URLEncoder.encode(pattern, StandardCharsets.UTF_8);
-            result = result.replaceAll("\\Q" + urlEncoded + "\\E", "");
+            result = result.replace(urlEncoded, "");
 
             // Strip HTML-entity-encoded form, using the same numeric entities (&#60;/&#62;) the
             // generic rule (40018) reflects and strips via AbstractPlugin.getHTMLEncode
             String htmlEncoded = AbstractPlugin.getHTMLEncode(pattern);
-            result = result.replaceAll("\\Q" + htmlEncoded + "\\E", "");
+            result = result.replace(htmlEncoded, "");
 
             // Strip HTML-entity-encoded form of the URL-encoded pattern (double encoding)
             String doubleEncoded = AbstractPlugin.getHTMLEncode(urlEncoded);
-            result = result.replaceAll("\\Q" + doubleEncoded + "\\E", "");
+            result = result.replace(doubleEncoded, "");
 
             // Strip XML-escaped form (preferred over XML 11 per baseline comment)
             String xmlEscaped = StringEscapeUtils.escapeXml10(pattern);
-            result = result.replaceAll("\\Q" + xmlEscaped + "\\E", "");
+            result = result.replace(xmlEscaped, "");
         }
 
         return result;
@@ -143,21 +126,12 @@ public final class ResponseBodyUtils {
      * Normalises per-request volatile regions (CSRF hidden fields, ISO-8601 timestamps) to a fixed
      * placeholder so rotating tokens do not break response differentials.
      *
-     * <p>Results are memoised: normalisation is a pure function of the input body, so repeated
-     * calls on the same body (exact path followed by template derivation/matching) reuse the cached
-     * value instead of re-running the regex passes.
-     *
      * @param text the response body to normalise
      * @return the body with matched volatile regions replaced, or empty string if null
      */
     public static String stripVolatileTokens(String text) {
         if (text == null || text.isEmpty()) {
             return text == null ? "" : text;
-        }
-
-        String cached = VOLATILE_CACHE.get(text);
-        if (cached != null) {
-            return cached;
         }
 
         String result = text;
@@ -200,7 +174,6 @@ public final class ResponseBodyUtils {
         // UUIDs (request/correlation ids) regenerate on every render.
         result = UUID_PATTERN.matcher(result).replaceAll(VOLATILE_PLACEHOLDER);
 
-        VOLATILE_CACHE.put(text, result);
         return result;
     }
 
