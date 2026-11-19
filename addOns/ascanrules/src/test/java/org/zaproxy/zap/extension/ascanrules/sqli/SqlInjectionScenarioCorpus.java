@@ -204,7 +204,8 @@ public final class SqlInjectionScenarioCorpus {
      * Whether the value is a {@code UNION} selecting the 15 columns the published proof of concept
      * needs: thirteen {@code NULL}s, a canary, and a trailing {@code NULL}. A {@code UNION} with
      * any other number of columns is what a real application rejects with a database error, which
-     * is the signal the rule is expected to find here; the canary reflection is Step 6's business.
+     * is the signal the rule is expected to find here; the canary reflection is covered by the
+     * canary scenario below.
      */
     private static boolean unionHas15Columns(String value) {
         if (value == null || !value.toUpperCase(Locale.ROOT).contains("UNION")) {
@@ -274,10 +275,10 @@ public final class SqlInjectionScenarioCorpus {
      * the page's own moving content rather than by the query, so "the true condition reproduces the
      * baseline" never holds byte for byte and a diff-based technique has nothing to compare.
      *
-     * <p>This is the row that makes Step 5.1 measurable. Without an injectable volatile row the
-     * corpus's only volatile rows are the three false-positive-prone ones, which already sit at
-     * zero false positives, so the step's own acceptance gate ("FP down on volatile rows with no FN
-     * regression") describes a number that cannot move.
+     * <p>This row makes the volatile-content handling measurable. Without an injectable volatile
+     * row the corpus's only volatile rows are the three false-positive-prone ones, which already
+     * sit at zero false positives, so the step's own acceptance gate ("FP down on volatile rows
+     * with no FN regression") describes a number that cannot move.
      */
     private static SqlInjectionScenario volatilePageBooleanInjection() {
         return new SqlInjectionScenario(
@@ -432,7 +433,7 @@ public final class SqlInjectionScenarioCorpus {
         return new SqlInjectionScenario(
                 "volatile-page-expression-injection",
                 INJECTABLE,
-                "Step 5.3: expression-strategy counterpart of volatile-page-boolean-injection",
+                "Expression-strategy counterpart of volatile-page-boolean-injection",
                 "/catalog?item=1",
                 "",
                 SqlInjectionScenarioCorpus::volatileExpressionPage);
@@ -455,7 +456,7 @@ public final class SqlInjectionScenarioCorpus {
         return new SqlInjectionScenario(
                 "volatile-page-order-by-injection",
                 BLIND,
-                "Step 5.3: order-by-strategy counterpart of volatile-page-boolean-injection; "
+                "Order-by-strategy counterpart of volatile-page-boolean-injection; "
                         + "also backlog row #4 (ORDER BY position param). BLIND, not INJECTABLE: "
                         + "ORDERBY budget is 0 below HIGH (mirroring 40018), so the MEDIUM corpus "
                         + "runner never reaches the strategy — the HIGH-strength unit test in "
@@ -468,8 +469,8 @@ public final class SqlInjectionScenarioCorpus {
     /**
      * A search page whose UNION result interpolates the computed value: an {@code md5('...')} probe
      * is answered with the hash while every other payload is echoed unchanged — 200 OK, no error
-     * text, no gross shape change. The canary middle stage (Step 6.2) exists for exactly this
-     * shape, so without this row its true-positive side has no corpus coverage.
+     * text, no gross shape change. The canary stage exists for exactly this shape, so without this
+     * row its true-positive side has no corpus coverage.
      *
      * <p>Labelled {@link SqlInjectionScenario.Outcome#BLIND} for the same budget reason as {@link
      * #volatilePageOrderByInjection()}: the six appendage probes exhaust the MEDIUM budget before
@@ -480,7 +481,7 @@ public final class SqlInjectionScenarioCorpus {
         return new SqlInjectionScenario(
                 "reflecting-union-interpolation",
                 BLIND,
-                "Step 6.2: md5-reflection UNION row for the canary middle stage; BLIND, not "
+                "md5-reflection UNION row for the canary middle stage; BLIND, not "
                         + "INJECTABLE: six appendage probes exhaust the MEDIUM budget before the "
                         + "canary probe runs — the HIGH-strength unit tests in "
                         + "UnionBasedDetectionStrategyUnitTest prove the wiring instead",

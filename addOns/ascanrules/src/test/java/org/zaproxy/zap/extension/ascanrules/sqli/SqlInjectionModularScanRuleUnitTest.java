@@ -80,6 +80,27 @@ class SqlInjectionModularScanRuleUnitTest extends AbstractSqlInjectionModularSca
     }
 
     @Test
+    void shouldStopWithoutAlertsWhenBaselineCannotBeFetched() throws Exception {
+        // Given
+        String path = "/sqli/baseline-failure/";
+        nano.addHandler(
+                UrlParamValueHandler.builder()
+                        .targetPath(path)
+                        .targetParam("id")
+                        .fallbackHtmlResponse("ok")
+                        .build());
+        rule.init(getHttpMessage(path + "?id=1"), parent);
+        // The baseline request now fails with an IOException (connection refused).
+        stopServer();
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    @Test
     void shouldAlertOnSqlErrorInJsonBodyParameter() throws Exception {
         // Given
         String path = "/sqli/json/";

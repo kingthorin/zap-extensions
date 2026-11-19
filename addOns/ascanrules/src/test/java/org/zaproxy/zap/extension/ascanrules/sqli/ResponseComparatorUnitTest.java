@@ -64,7 +64,6 @@ class ResponseComparatorUnitTest {
                 comparator.isIndistinguishableFromBenignControl(
                         baseline, ORIGINAL, control, CONTROL),
                 is(false));
-        assertThat(comparator.isSimilar(baseline, ORIGINAL, control, CONTROL), is(true));
     }
 
     /** Different status is a different outcome, whatever the body says. */

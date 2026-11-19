@@ -35,7 +35,7 @@ import org.zaproxy.zap.testutils.ActiveScannerTestUtils;
  * drop-in replacement for.
  */
 public abstract class AbstractSqlInjectionModularScanRuleTest
-        extends ActiveScannerTestUtils<SqlInjectionModularScanRule> {
+        extends ActiveScannerTestUtils<MeteredSqlInjectionModularScanRule> {
 
     @Override
     protected void setUpMessages() {
@@ -43,8 +43,8 @@ public abstract class AbstractSqlInjectionModularScanRuleTest
     }
 
     @Override
-    protected SqlInjectionModularScanRule createScanner() {
-        return new SqlInjectionModularScanRule();
+    protected MeteredSqlInjectionModularScanRule createScanner() {
+        return new MeteredSqlInjectionModularScanRule();
     }
 
     @Override

@@ -49,9 +49,9 @@ public final class StrictInputValidationGuard {
      * the payload. When the benign control value trips the same signature, strategies must not
      * treat a signature match as evidence of injection.
      *
-     * <p>ponytail: this bails out wholesale rather than trying to separate payload-specific errors
-     * from generic ones; upgrade path is comparing the matched fragment/status of control and
-     * attack responses if a page legitimately errors on both.
+     * <p>This bails out wholesale rather than trying to separate payload-specific errors from
+     * generic ones; upgrade path is comparing the matched fragment/status of control and attack
+     * responses if a page legitimately errors on both.
      *
      * @param context the scan context
      * @return true if the cached control response carries a database error signature

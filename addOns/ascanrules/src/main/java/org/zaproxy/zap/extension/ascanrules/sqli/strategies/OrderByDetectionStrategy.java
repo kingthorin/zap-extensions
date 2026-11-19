@@ -84,7 +84,8 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         if (!ascMatchesBaseline
                 && ascMsg.getResponseHeader().getStatusCode()
                         == baseline.getResponseHeader().getStatusCode()
-                && 1 + 1 <= budget) {
+                && !context.isStopped()
+                && context.getRemainingBudget() >= 1) {
             HttpMessage replay = context.getRepeatedBaseline();
             if (replay.getResponseHeader().getStatusCode()
                     == baseline.getResponseHeader().getStatusCode()) {
@@ -116,7 +117,7 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         }
         context.recordBaselineMatch();
 
-        if (budget < 2) {
+        if (context.isStopped() || context.getRemainingBudget() < 1) {
             // We matched, but no budget left for DESC confirmation
             return false;
         }

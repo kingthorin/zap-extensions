@@ -22,39 +22,27 @@ package org.zaproxy.zap.extension.ascanrules.sqli;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.api.Test;
 import org.parosproxy.paros.network.HttpMessage;
 
 /** Pure-logic unit test for {@link SqliContextAnalyzer} -- no HTTP server needed. */
 class SqliContextAnalyzerUnitTest {
 
-    @ParameterizedTest
-    @ValueSource(ints = {301, 302, 404, 403, 500})
-    void shouldFlagBaselineThatIsNotANormalResponse(int status) throws Exception {
-        // Given
-        HttpMessage baseline = response(status, "some page");
+    @Test
+    void shouldInferNumericContextFromDigitsOnlyValue() throws Exception {
         // When
-        ParameterContext context = SqliContextAnalyzer.analyze("jsmith", baseline);
+        ParameterContext context = SqliContextAnalyzer.analyze("42", new HttpMessage());
         // Then
-        assertThat(context.baselineIsNonNormalResponse, is(true));
+        assertThat(context.isNumericContext, is(true));
+        assertThat(context.isStringLiteralContext, is(false));
     }
 
-    @ParameterizedTest
-    @ValueSource(ints = {200, 201, 204})
-    void shouldNotFlagNormalBaseline(int status) throws Exception {
-        // Given
-        HttpMessage baseline = response(status, "some page");
+    @Test
+    void shouldInferStringContextFromNonNumericValue() throws Exception {
         // When
-        ParameterContext context = SqliContextAnalyzer.analyze("jsmith", baseline);
+        ParameterContext context = SqliContextAnalyzer.analyze("jsmith", new HttpMessage());
         // Then
-        assertThat(context.baselineIsNonNormalResponse, is(false));
-    }
-
-    private static HttpMessage response(int status, String body) throws Exception {
-        HttpMessage msg = new HttpMessage();
-        msg.setResponseHeader("HTTP/1.1 " + status + " Status\r\nContent-Type: text/html\r\n\r\n");
-        msg.setResponseBody(body);
-        return msg;
+        assertThat(context.isNumericContext, is(false));
+        assertThat(context.isStringLiteralContext, is(true));
     }
 }

@@ -235,7 +235,7 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
      * The hex of {@code md5(canary)}, which is what a UNION result interpolates when the database
      * evaluates the function: probe text carries the call, the response carries the hash.
      *
-     * <p>ponytail: {@code md5()} naming only (MySQL/Postgres); MSSQL needs {@code
+     * <p>Only the {@code md5()} name is tried (MySQL/Postgres); MSSQL needs {@code
      * HASHBYTES('MD5',...)} and other engines differ again. A miss there is FN-only, never FP: a
      * non-evaluated token simply doesn't reflect and the diff fallback below still runs. Ceiling is
      * one function name; upgrade is a per-{@link Dbms} function walk if the corpus ever shows a

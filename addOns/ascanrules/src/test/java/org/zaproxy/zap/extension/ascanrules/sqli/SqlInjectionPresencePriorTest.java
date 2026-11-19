@@ -31,7 +31,6 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome;
 
 /**
@@ -146,22 +145,6 @@ class SqlInjectionPresencePriorTest extends AbstractSqlInjectionModularScanRuleT
                         + charged,
                 charged + 2,
                 is(equalTo(httpMessagesSent.size())));
-    }
-
-    /**
-     * A record written by another version of this rule is ignored rather than trusted: the
-     * knowledge base cannot be purged, so the version stamp is the only way a future format can
-     * retire what it wrote.
-     */
-    @ParameterizedTest
-    @ValueSource(strings = {"", "v0", "v2", "true", "1"})
-    void presenceRecordFromAnotherVersionIsIgnored(String record) {
-        assertThat(SqlInjectionModularScanRule.isCurrentRecord(record), is(false));
-    }
-
-    @Test
-    void presenceRecordOfThisVersionIsUsed() {
-        assertThat(SqlInjectionModularScanRule.isCurrentRecord("v1"), is(true));
     }
 
     /** Every injectable row, with the technique that finds it, as a {@link MethodSource}. */

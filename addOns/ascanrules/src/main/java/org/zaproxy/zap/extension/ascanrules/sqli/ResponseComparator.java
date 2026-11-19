@@ -23,29 +23,20 @@ import java.util.ArrayList;
 import java.util.List;
 import org.parosproxy.paros.network.HttpMessage;
 import org.parosproxy.paros.network.HttpStatusCode;
-import org.zaproxy.addon.commonlib.http.ComparableResponse;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ResponseBodyUtils;
 
 /**
- * Thin wrapper around commonlib's {@link ComparableResponse} fuzzy-diff heuristic (already used by
- * 40018 -- a known quantity, not extra risk to pull in).
+ * Response comparison for the detection strategies: exact matching once the value sent has been
+ * stripped in all its encoded forms, with volatile page content (tokens, timestamps, counters)
+ * masked.
  *
- * <p><strong>Caveat:</strong> this being a reasonable choice is proven against WAVSEP specifically.
- * WAVSEP's case labels (which pages are genuinely vulnerable) are solid ground truth verified
- * directly against the running app, but that doesn't make this comparison heuristic automatically
- * correct for every target. It's kept behind this one class, on the other side of the {@link
- * DetectionStrategy} seam, specifically so it can be swapped or rethought once validation moves on
- * to other test beds, without that decision leaking into the rest of the rule.
+ * <p><strong>Caveat:</strong> the heuristics are proven against WAVSEP specifically. Its case
+ * labels (which pages are genuinely vulnerable) are solid ground truth, but that doesn't make the
+ * comparison correct for every target. It is kept behind this one class, on the other side of the
+ * {@link DetectionStrategy} seam, so it can be rethought once validation moves on to other test
+ * beds.
  */
 public class ResponseComparator {
-
-    /**
-     * Similarity score (from {@link ComparableResponse#compareWith}) at or above which two
-     * responses are considered the same outcome. 0 means very different, 1 means very similar.
-     */
-    private static final float SIMILARITY_THRESHOLD = 0.98f;
-
-    private static final float FUZZY_TUNED_THRESHOLD = 0.97f;
 
     /**
      * Bodies larger than this are never templated: derivation and matching are linear in the body
@@ -74,13 +65,13 @@ public class ResponseComparator {
      * page that answers every value the same way also answers the true and the false condition the
      * same way.
      *
-     * <p>Strict on purpose, and not the fuzzy {@link #isSimilar}: the question is whether the page
-     * changed, not whether two responses are near each other. A redirect is the case that decides
-     * it — a {@code 301} whose {@code Location} echoes the parameter value and one whose {@code
-     * Location} echoes the control suffix are the same landing page, but they differ in their
-     * headers, so both a fuzzy compare and {@link #matchesExactlyAfterStripping} (which compares
-     * {@code Location} verbatim) call them different. Same status, same {@code Location} with the
-     * value stripped, same body with the value stripped: match.
+     * <p>Strict on purpose, not fuzzy: the question is whether the page changed, not whether two
+     * responses are near each other. A redirect is the case that decides it — a {@code 301} whose
+     * {@code Location} echoes the parameter value and one whose {@code Location} echoes the control
+     * suffix are the same landing page, but they differ in their headers, so both a fuzzy compare
+     * and {@link #matchesExactlyAfterStripping} (which compares {@code Location} verbatim) call
+     * them different. Same status, same {@code Location} with the value stripped, same body with
+     * the value stripped: match.
      *
      * @param baseline the response to the original value
      * @param originalValue the original parameter value
@@ -149,36 +140,6 @@ public class ResponseComparator {
                                 ResponseBodyUtils.stripVolatileTokens(bBody),
                                 bOriginalValue,
                                 bValueSent));
-    }
-
-    /**
-     * Whether {@code a} and {@code b} represent essentially the same response.
-     *
-     * <p>A fuzzy similarity over the whole response, so a header that echoes the value sent counts
-     * against it — fine for "are these the same outcome", wrong for "does this parameter matter",
-     * which is {@link #isIndistinguishableFromBenignControl}.
-     */
-    public boolean isSimilar(HttpMessage a, String aValue, HttpMessage b, String bValue) {
-        return similarity(a, aValue, b, bValue) >= SIMILARITY_THRESHOLD;
-    }
-
-    /** Whether {@code a} and {@code b} represent meaningfully different responses. */
-    public boolean isDifferent(HttpMessage a, String aValue, HttpMessage b, String bValue) {
-        return !isSimilar(a, aValue, b, bValue);
-    }
-
-    /**
-     * Fuzzy similarity with tuned heuristics: creates two ComparableResponse objects, tunes their
-     * weights based on each other, then compares them. More adaptive than strict matching but
-     * retains fidelity through weight tuning.
-     */
-    public boolean isSimilarTuned(HttpMessage a, String aValue, HttpMessage b, String bValue) {
-        return similarityTuned(a, aValue, b, bValue) >= FUZZY_TUNED_THRESHOLD;
-    }
-
-    /** Negation of isSimilarTuned for boolean logic. */
-    public boolean isDifferentTuned(HttpMessage a, String aValue, HttpMessage b, String bValue) {
-        return !isSimilarTuned(a, aValue, b, bValue);
     }
 
     /**
@@ -266,21 +227,6 @@ public class ResponseComparator {
 
     private static boolean isErrorStatus(int statusCode) {
         return HttpStatusCode.isClientError(statusCode) || HttpStatusCode.isServerError(statusCode);
-    }
-
-    private float similarity(HttpMessage a, String aValue, HttpMessage b, String bValue) {
-        ComparableResponse responseA = new ComparableResponse(a, aValue);
-        ComparableResponse responseB = new ComparableResponse(b, bValue);
-        return responseA.compareWith(responseB);
-    }
-
-    private float similarityTuned(HttpMessage a, String aValue, HttpMessage b, String bValue) {
-        ComparableResponse responseA = new ComparableResponse(a, aValue);
-        ComparableResponse responseB = new ComparableResponse(b, bValue);
-        // Tune weights based on each other for more adaptive comparison
-        responseA.tuneHeuristicsWithResponse(responseB);
-        responseB.tuneHeuristicsWithResponse(responseA);
-        return responseA.compareWith(responseB);
     }
 
     // -- Volatile content: learn what moves between two renders of the same request, then compare

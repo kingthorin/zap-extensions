@@ -67,14 +67,8 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     private static final String MESSAGE_PREFIX = "ascanrules.sqlinjectionmodular.";
     private static final Logger LOGGER = LogManager.getLogger(SqlInjectionModularScanRule.class);
 
-    /**
-     * Version stamp on the presence records this rule writes to the knowledge base.
-     *
-     * <p>The knowledge base is a write-once set with no removal, so the stamp is the only way to
-     * retire what an earlier format of this rule wrote: a record carrying any other stamp is
-     * ignored, which is what {@link #isCurrentRecord(String)} is asked about on every read.
-     */
-    private static final String KB_RECORD_VERSION = "v1";
+    /** Value of the presence records written to the knowledge base. */
+    private static final String PRESENCE_MARKER = "found";
 
     private static final Map<String, String> ALERT_TAGS;
 
@@ -120,24 +114,22 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
                     new UnionBasedDetectionStrategy(),
                     new LoginBypassDetectionStrategy());
 
-    // Per-technique budgets, mirroring baseline rule 40018's ceilings (SqlInjectionScanRule
-    // init(), lines 493-543): LOW = error + expression only; MEDIUM adds boolean/union (no order
-    // by, no LIKE); HIGH adds order by; LIKE conditions are gated on HIGH by the boolean strategy.
-    // Each strategy draws from its own reserved allocation, not a shared pool.
+    // Per-technique budgets, indexed by attack strength (LOW, MEDIUM, HIGH, INSANE), following
+    // baseline rule 40018's ceilings: LOW = error + expression only; MEDIUM adds boolean/union (no
+    // order by); HIGH adds order by. The boolean strategy's LIKE conditions need HIGH or INSANE
+    // strength and a LOW alert threshold. Each strategy draws from its own reserved allocation,
+    // not a shared pool.
     //
-    // The counts are one lower than 40018's, because the baseline is no longer in them:
-    // scan() fetches one baseline per parameter and every technique diffs against that
-    // one, so a technique's allocation is all probes. Before, each technique that
-    // compared against a baseline paid the first request of its allocation for it
-    // (BOOLEAN, EXPRESSION, ORDERBY, UNION, LOGINBYPASS). ERROR never did -- it used
-    // the shared baseline from the start -- so it keeps 40018's numbers unchanged.
+    // The allocations are all probes. The baseline and the control are fetched once per
+    // parameter, shared by every technique, and are fixed per-parameter overhead outside every
+    // allocation: two requests per parameter at any strength. The counts are one lower than
+    // 40018's for the techniques that diff against the baseline (BOOLEAN, EXPRESSION, ORDERBY,
+    // UNION, LOGINBYPASS), which paid the first request of their allocation for it.
     private static final Map<String, int[]> TECHNIQUE_BUDGETS =
             Map.ofEntries(
                     Map.entry("ERROR", new int[] {4, 8, 16, 50}),
                     // Conditional-error: paired false/true probes (2 requests per template).
-                    // MEDIUM+
-                    // like BOOLEAN; 0 at LOW so the cheap default never pays for it. Placeholder,
-                    // calibrated against the corpus + WAVSEP in the follow-up step.
+                    // None at LOW so the cheapest strength never pays for it.
                     Map.entry("CONDERROR", new int[] {0, 4, 8, 16}),
                     Map.entry("EXPRESSION", new int[] {3, 7, 15, 49}),
                     Map.entry("BOOLEAN", new int[] {0, 7, 19, 49}),
@@ -149,23 +141,6 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     private String originalValue;
     private String currentTechnique = "";
 
-    /**
-     * Requests spent by each technique on the request last scanned, so the cost of a technique
-     * order is measurable rather than argued about: the presence prior exists to spend the requests
-     * of the techniques that will not find anything last.
-     */
-    private final Map<String, Integer> techniqueRequests = new HashMap<>();
-
-    /**
-     * Near-miss attribution, cleared with {@link #techniqueRequests}: how many times a probe
-     * matched the baseline (the gate before any alert) and how many would-have-alerted
-     * differentials the error-status guard suppressed. Reported by the metrics runner so a zero in
-     * the false-positive column has something behind it.
-     */
-    private int baselineMatches;
-
-    private int suppressedDifferentials;
-
     private Map<String, Integer> techniqueBudgets;
     private ParameterContext parameterContext;
     private HttpMessage cachedBaseline;
@@ -175,12 +150,6 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     @Override
     public void init() {
         initBudgets();
-        // Per request rather than per parameter: scan() is called once for each parameter of a
-        // request, and what each technique spent on the request as a whole is what the metrics
-        // runner reports.
-        techniqueRequests.clear();
-        baselineMatches = 0;
-        suppressedDifferentials = 0;
     }
 
     private void initBudgets() {
@@ -253,7 +222,7 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
         this.paramName = param;
         this.originalValue = value;
 
-        URI uri = null;
+        URI uri;
         try {
             // One baseline per parameter, fetched here and shared by every technique: a technique
             // fetching its own copy only re-buys the same page, once per technique that compares
@@ -281,6 +250,9 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
                     "Failed to initialize parameter context for parameter [{}]: {}",
                     param,
                     e.getMessage());
+            // Without this parameter's own baseline and control no technique has anything to
+            // compare against, and the previous parameter's must not be reused.
+            return;
         }
 
         // 40018 reinitialises its per-technique counts for every parameter (SqlInjectionScanRule
@@ -364,15 +336,15 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
      *
      * @param uri the request's URI, for the path-scoped records, or {@code null} if it has none
      * @param technique the technique name
-     * @return {@code true} if a current presence record covers the technique
+     * @return {@code true} if a presence record covers the technique
      * @throws IOException if a presence record could not be read
      */
     private boolean hasPresenceRecord(URI uri, String technique) throws IOException {
         Kb kb = getKb();
-        if (uri != null && isCurrentRecord(kb.getString(uri, presenceKey(technique, paramName)))) {
+        if (uri != null && kb.getString(uri, presenceKey(technique, paramName)) != null) {
             return true;
         }
-        return isCurrentRecord(kb.getString(techniqueKey(technique)));
+        return kb.getString(techniqueKey(technique)) != null;
     }
 
     /**
@@ -387,9 +359,9 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     private void recordPresence(URI uri, String technique) throws IOException {
         Kb kb = getKb();
         if (uri != null) {
-            kb.add(uri, presenceKey(technique, paramName), KB_RECORD_VERSION);
+            kb.add(uri, presenceKey(technique, paramName), PRESENCE_MARKER);
         }
-        kb.add(techniqueKey(technique), KB_RECORD_VERSION);
+        kb.add(techniqueKey(technique), PRESENCE_MARKER);
     }
 
     private static String presenceKey(String technique, String param) {
@@ -398,10 +370,6 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
 
     private static String techniqueKey(String technique) {
         return "T=" + technique;
-    }
-
-    static boolean isCurrentRecord(String record) {
-        return KB_RECORD_VERSION.equals(record);
     }
 
     // -- ScanContext: thin delegation to the protected AbstractPlugin/AbstractAppParamPlugin
@@ -425,7 +393,6 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     @Override
     public void sendAndReceive(HttpMessage message) throws IOException {
         super.sendAndReceive(message);
-        techniqueRequests.merge(currentTechnique, 1, Integer::sum);
         if (techniqueBudgets != null && techniqueBudgets.containsKey(currentTechnique)) {
             int current = techniqueBudgets.get(currentTechnique);
             if (current > 0) {
@@ -442,17 +409,6 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     @Override
     public boolean isStopped() {
         return isStop();
-    }
-
-    /**
-     * Returns what each technique spent on the request that was scanned last, keyed by technique
-     * name, summed over every parameter of that request. The baseline and control messages, fetched
-     * once per parameter, are not charged to a technique and are not counted here.
-     *
-     * @return an unmodifiable map of technique name to the requests it sent
-     */
-    public Map<String, Integer> getTechniqueRequests() {
-        return Map.copyOf(techniqueRequests);
     }
 
     @Override
@@ -560,37 +516,5 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
             sendAndReceive(cachedRepeat);
         }
         return cachedRepeat;
-    }
-
-    @Override
-    public void recordBaselineMatch() {
-        baselineMatches++;
-    }
-
-    @Override
-    public void recordSuppressedDifferential() {
-        suppressedDifferentials++;
-    }
-
-    /**
-     * How many probes matched the baseline on the request scanned last — the gate every
-     * differential technique passes before it can alert, summed over every parameter of the
-     * request. A non-injectable row with a non-zero count is a near miss: the differential got its
-     * first half and the alert was stopped only by the second.
-     *
-     * @return the number of baseline matches recorded
-     */
-    public int getBaselineMatchCount() {
-        return baselineMatches;
-    }
-
-    /**
-     * How many would-have-alerted differentials the error-status guard suppressed on the request
-     * scanned last (rate limited, WAF, timed out), summed over every parameter of the request.
-     *
-     * @return the number of suppressed differentials recorded
-     */
-    public int getSuppressedDifferentialCount() {
-        return suppressedDifferentials;
     }
 }

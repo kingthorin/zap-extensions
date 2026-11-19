@@ -180,7 +180,6 @@ public final class DbErrorSignatures {
         private final List<String> fragments;
         private final List<Pattern> patterns;
         private final List<String> unionFragments;
-        private final List<Pattern> unionPatterns;
         private final List<Pattern> regexPatterns;
 
         Dbms(Tech tech, String label, List<String> literalFragments, List<String> unionFragments) {
@@ -198,7 +197,6 @@ public final class DbErrorSignatures {
             this.fragments = literalFragments;
             this.patterns = literalFragments.stream().map(DbErrorSignatures::literal).toList();
             this.unionFragments = unionFragments;
-            this.unionPatterns = unionFragments.stream().map(DbErrorSignatures::literal).toList();
             this.regexPatterns = regexFragments.stream().map(DbErrorSignatures::pattern).toList();
         }
 
@@ -208,7 +206,6 @@ public final class DbErrorSignatures {
             this.fragments = literalFragments;
             this.patterns = literalFragments.stream().map(DbErrorSignatures::literal).toList();
             this.unionFragments = List.of();
-            this.unionPatterns = List.of();
             this.regexPatterns = List.of();
         }
 
@@ -249,19 +246,6 @@ public final class DbErrorSignatures {
                 }
             }
             return Optional.empty();
-        }
-
-        /** Whether {@code text} contains any of this engine's UNION-specific fragments. */
-        public boolean matchesUnionFragment(String text) {
-            if (text == null || text.isEmpty()) {
-                return false;
-            }
-            for (Pattern pattern : unionPatterns) {
-                if (pattern.matcher(text).find()) {
-                    return true;
-                }
-            }
-            return false;
         }
     }
 

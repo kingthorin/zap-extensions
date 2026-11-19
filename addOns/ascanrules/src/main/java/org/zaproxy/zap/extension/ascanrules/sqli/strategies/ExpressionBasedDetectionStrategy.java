@@ -78,7 +78,7 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
             }
 
             // Try MULT variant: if param is 1, try "2/2" and "4/2"
-            if (4 <= budget) {
+            if (4 <= budget && !context.isStopped()) {
                 int paramMultTwo = Math.multiplyExact(paramAsInt, 2);
                 int paramMultFour = Math.multiplyExact(paramAsInt, 4);
 
@@ -187,6 +187,10 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         }
         context.recordBaselineMatch();
 
+        if (context.isStopped()) {
+            return false;
+        }
+
         // Test second variant
         HttpMessage msg2 = context.newMessage();
         context.setParam(msg2, variant2);
@@ -195,7 +199,7 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         boolean variant2DiffersFromBaseline;
         boolean variant2DiffersFromVariant1;
         if (slot.template != null) {
-            // ponytail: variant2-vs-variant1 under a template is approximated as
+            // The variant2-vs-variant1 comparison under a template is approximated as
             // "variant1-in minus variant2-out" rather than a template derived from msg1,
             // because deriving a second template costs another replay. Sound for the
             // alert direction (IN variants only differ by their arithmetic value), and

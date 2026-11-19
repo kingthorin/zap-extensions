@@ -82,15 +82,16 @@ public interface ScanContext {
     TechSet getTechSet();
 
     /**
-     * Current attack strength, used by strategies to skip expensive payload families (e.g. LIKE
-     * attacks, which baseline rule 40018 only runs at HIGH) that would blow the per-strength
-     * message budgets.
+     * Current attack strength, used by strategies to skip expensive payload families (e.g. the LIKE
+     * conditions, which need HIGH or INSANE strength) that would blow the per-strength message
+     * budgets.
      */
     AttackStrength getAttackStrength();
 
     /**
      * Current alert threshold, used by strategies to gate noisy/FP-prone payload families (e.g. the
-     * LIKE family) so they only run when the user has opted into low-evidence scanning.
+     * LIKE conditions, which also need a LOW threshold) so they only run when the user has opted
+     * into low-evidence scanning.
      */
     AlertThreshold getAlertThreshold();
 
@@ -144,7 +145,7 @@ public interface ScanContext {
      * can report how close a non-injectable row came to alerting: rows that pass this gate without
      * alerting are the ones a noisy page would have to fool to produce a false positive.
      */
-    void recordBaselineMatch();
+    default void recordBaselineMatch() {}
 
     /**
      * Records a differential that would have alerted but was not raised, because the difference was
@@ -152,5 +153,5 @@ public interface ScanContext {
      * the closest near misses a scan has, and the count is reported alongside {@link
      * #recordBaselineMatch()}.
      */
-    void recordSuppressedDifferential();
+    default void recordSuppressedDifferential() {}
 }
