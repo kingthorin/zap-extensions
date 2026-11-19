@@ -40,7 +40,6 @@ import org.zaproxy.addon.commonlib.CommonAlertTag;
 import org.zaproxy.addon.commonlib.PolicyTag;
 import org.zaproxy.zap.extension.ascanrules.CommonActiveScanRuleInfo;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.BooleanBasedDetectionStrategy;
-import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ConditionalErrorBasedDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ErrorBasedDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ExpressionBasedDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.LoginBypassDetectionStrategy;
@@ -108,7 +107,6 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     private final List<DetectionStrategy> strategies =
             List.of(
                     new ErrorBasedDetectionStrategy(),
-                    new ConditionalErrorBasedDetectionStrategy(),
                     new BooleanBasedDetectionStrategy(),
                     new ExpressionBasedDetectionStrategy(),
                     new OrderByDetectionStrategy(),
@@ -130,9 +128,6 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
     private static final Map<String, int[]> TECHNIQUE_BUDGETS =
             Map.ofEntries(
                     Map.entry("ERROR", new int[] {4, 8, 16, 50}),
-                    // Conditional-error: paired false/true probes (2 requests per template).
-                    // None at LOW so the cheapest strength never pays for it.
-                    Map.entry("CONDERROR", new int[] {0, 4, 8, 16}),
                     Map.entry("EXPRESSION", new int[] {3, 7, 15, 49}),
                     Map.entry("BOOLEAN", new int[] {0, 7, 19, 49}),
                     Map.entry("ORDERBY", new int[] {0, 0, 4, 49}),
@@ -268,7 +263,6 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
 
         String[] techniqueNames = {
             "ERROR",
-            "CONDERROR",
             "BOOLEAN",
             "EXPRESSION",
             "ORDERBY",
