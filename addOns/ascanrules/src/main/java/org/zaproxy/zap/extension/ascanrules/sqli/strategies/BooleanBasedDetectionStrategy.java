@@ -20,9 +20,6 @@
 package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
 import java.io.IOException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.regex.Pattern;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.extension.ascanrules.sqli.DetectionStrategy;
@@ -44,23 +41,7 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
  */
 public class BooleanBasedDetectionStrategy implements DetectionStrategy {
 
-    private static final Pattern PERCENT_ESCAPE = Pattern.compile("%[0-9A-Fa-f]{2}");
-
     private final ResponseComparator comparator = new ResponseComparator();
-
-    /**
-     * The value to set for a probe. A parameter whose original value still carries percent escapes
-     * after ZAP's own decoding is double-encoded: the application decodes it a second time, so the
-     * payload is encoded once here (ZAP encodes it once more when sending) and reaches the
-     * application intact, including {@code %} and {@code +}. Other parameters get the payload
-     * unchanged. Local to the value, so no request is added.
-     */
-    static String valueToSend(String originalValue, String payload) {
-        if (PERCENT_ESCAPE.matcher(originalValue).find()) {
-            return originalValue + URLEncoder.encode(payload, StandardCharsets.UTF_8);
-        }
-        return originalValue + payload;
-    }
 
     @Override
     public boolean detect(ScanContext context) throws IOException {
@@ -87,7 +68,7 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
 
             String trueValue = originalValue + condition.andTrue();
             HttpMessage trueMsg = context.newMessage();
-            context.setParam(trueMsg, valueToSend(originalValue, condition.andTrue()));
+            context.setParam(trueMsg, trueValue);
             context.sendAndReceive(trueMsg);
             used++;
 
@@ -144,7 +125,7 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
 
             String falseValue = originalValue + condition.andFalse();
             HttpMessage falseMsg = context.newMessage();
-            context.setParam(falseMsg, valueToSend(originalValue, condition.andFalse()));
+            context.setParam(falseMsg, falseValue);
             context.sendAndReceive(falseMsg);
             used++;
 

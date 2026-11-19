@@ -19,7 +19,6 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
-import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
@@ -28,13 +27,10 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.zaproxy.zap.testutils.RequestCondition.param;
 
-import fi.iki.elonen.NanoHTTPD.IHTTPSession;
-import fi.iki.elonen.NanoHTTPD.Response;
 import org.junit.jupiter.api.Test;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenarioCorpus;
-import org.zaproxy.zap.testutils.NanoServerHandler;
 import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
 /**
@@ -63,45 +59,6 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
         // Then
         assertThat(alertsRaised, hasSize(1));
         assertThat(alertsRaised.get(0).getParam(), is(equalTo("id")));
-    }
-
-    @Test
-    void shouldAlertWhenParameterIsDoubleEncoded() throws Exception {
-        // Given: the page decodes the parameter a second time before using it
-        String path = "/sqli/boolean/double-encoded/";
-        nano.addHandler(
-                new NanoServerHandler(path) {
-                    @Override
-                    protected Response serve(IHTTPSession session) {
-                        String value = getFirstParamValue(session, "id");
-                        try {
-                            value = java.net.URLDecoder.decode(value, "UTF-8");
-                        } catch (Exception e) {
-                            return newFixedLengthResponse("");
-                        }
-                        return newFixedLengthResponse(
-                                SqlInjectionScenarioCorpus.isFalseCondition(value)
-                                        ? ""
-                                        : TRUE_CONDITION_CONTENT);
-                    }
-                });
-        rule.init(getHttpMessage(path + "?id=1%2520"), parent);
-
-        // When
-        rule.scan();
-
-        // Then
-        assertThat(alertsRaised, hasSize(1));
-    }
-
-    @Test
-    void shouldOnlyEncodePayloadWhenOriginalValueIsDoubleEncoded() {
-        assertThat(
-                BooleanBasedDetectionStrategy.valueToSend("1", "' AND 'a' LIKE 'a%"),
-                is("1' AND 'a' LIKE 'a%"));
-        assertThat(
-                BooleanBasedDetectionStrategy.valueToSend("1%20", "' AND 2>1 -- "),
-                is("1%20%27+AND+2%3E1+--+"));
     }
 
     @Test
