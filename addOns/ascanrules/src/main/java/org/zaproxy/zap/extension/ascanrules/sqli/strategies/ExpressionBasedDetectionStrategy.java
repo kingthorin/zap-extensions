@@ -241,6 +241,35 @@ public class ExpressionBasedDetectionStrategy implements DetectionStrategy {
         }
 
         if (wouldAlert) {
+            // A page that moved between the first variant and the second is volatile noise rather
+            // than an evaluated expression: replay the original and require it to still match the
+            // baseline, when the budget allows.
+            if (!context.isStopped() && context.getRemainingBudget() >= 1) {
+                HttpMessage controlMsg = context.newMessage();
+                context.setParam(controlMsg, originalValue);
+                context.sendAndReceive(controlMsg);
+                boolean controlMatchesBaseline =
+                        slot.template != null
+                                ? comparator.matches(
+                                        slot.template,
+                                        baselineMsg,
+                                        originalValue,
+                                        originalValue,
+                                        controlMsg,
+                                        originalValue,
+                                        originalValue)
+                                : comparator.matchesExactlyAfterStripping(
+                                        baselineMsg,
+                                        originalValue,
+                                        originalValue,
+                                        controlMsg,
+                                        originalValue,
+                                        originalValue);
+                if (!controlMatchesBaseline) {
+                    context.recordSuppressedDifferential();
+                    return false;
+                }
+            }
             // Expressions are being evaluated: baseline = variant1 but both differ from variant2
             context.newAlert()
                     .setConfidence(Alert.CONFIDENCE_MEDIUM)

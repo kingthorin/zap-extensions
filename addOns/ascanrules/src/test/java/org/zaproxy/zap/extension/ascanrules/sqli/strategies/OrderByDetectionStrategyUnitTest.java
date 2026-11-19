@@ -30,6 +30,8 @@ import static org.zaproxy.zap.testutils.RequestCondition.param;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
@@ -68,6 +70,82 @@ class OrderByDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRu
         // Then
         assertThat(alertsRaised, hasSize(1));
         assertThat(alertsRaised.get(0).getParam(), is(equalTo("username")));
+    }
+
+    /** Positive control for the order oracle: DESC reverses the rows and the page is stable. */
+    @Test
+    void shouldAlertWhenDescReversesRowsOnAStablePage() throws Exception {
+        // Given
+        String path = "/sqli/orderby/desc-stable/";
+        nano.addHandler(new MovableOrderByHandler(path, "sort", false, 200));
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?sort=1"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {403, 429, 500})
+    void shouldNotAlertWhenDescOnlyTurnsIntoAnErrorStatus(int status) throws Exception {
+        // Given
+        String path = "/sqli/orderby/desc-error/";
+        nano.addHandler(new MovableOrderByHandler(path, "sort", false, status));
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?sort=1"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    @Test
+    void shouldNotAlertWhenPageMovesAfterAscAndTheReplayNoLongerMatches() throws Exception {
+        // Given: the page changes on its own once DESC has been served, so the replayed original
+        // no longer matches the baseline: the DESC difference is the page moving, not the ordering.
+        String path = "/sqli/orderby/moving/";
+        nano.addHandler(new MovableOrderByHandler(path, "sort", true, 200));
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?sort=1"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {403, 429, 500})
+    void shouldNotAlertWhenOutOfRangeIndexOnlyTurnsIntoAnErrorStatus(int status) throws Exception {
+        // Given: a baseline matching zero rows, a valid index that behaves like it, and an
+        // out-of-range index answered with an error status.
+        String path = "/sqli/orderby/index-error/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "username");
+                        if (value != null && value.contains("ORDER BY 99")) {
+                            return newFixedLengthResponse(
+                                    Response.Status.lookup(status), "text/html", DEFAULT_VIEW);
+                        }
+                        return newFixedLengthResponse(DEFAULT_VIEW);
+                    }
+                });
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?username=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
     }
 
     @Test
@@ -132,6 +210,46 @@ class OrderByDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRu
     private static final String DEFAULT_VIEW = "Default view, no records to display";
 
     private static final String REJECTED_INDEX_VIEW = "Fallback page for an unusable query";
+
+    /**
+     * An ORDER BY position page: {@code ASC} and the original value answer {@code alpha, beta},
+     * {@code DESC} answers {@code beta, alpha} (or {@code descStatus} when it is not 200). When
+     * {@code movesAfterDesc} is set, every answer after the first {@code DESC} is the reversed
+     * order, as if the page changed on its own.
+     */
+    private static class MovableOrderByHandler extends NanoServerHandler {
+
+        private final String param;
+        private final boolean movesAfterDesc;
+        private final int descStatus;
+        private boolean moved;
+
+        MovableOrderByHandler(String path, String param, boolean movesAfterDesc, int descStatus) {
+            super(path);
+            this.param = param;
+            this.movesAfterDesc = movesAfterDesc;
+            this.descStatus = descStatus;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String value = getFirstParamValue(session, param);
+            boolean desc =
+                    value != null && value.toUpperCase(java.util.Locale.ROOT).contains("DESC");
+            if (desc && movesAfterDesc) {
+                moved = true;
+            }
+            String body =
+                    desc || moved
+                            ? "<table><tr><td>beta</td></tr><tr><td>alpha</td></tr></table>"
+                            : "<table><tr><td>alpha</td></tr><tr><td>beta</td></tr></table>";
+            if (desc && descStatus != 200) {
+                return newFixedLengthResponse(
+                        Response.Status.lookup(descStatus), "text/html", body);
+            }
+            return newFixedLengthResponse(body);
+        }
+    }
 
     /**
      * An ORDER BY position page rotating a per-request counter line: {@code ASC} and a valid index

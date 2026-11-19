@@ -141,6 +141,30 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
                         descPayload);
 
         if (descDiffersFromBaseline) {
+            // An error page for DESC alone -- rate limited, blocked by a WAF, timed out -- is not
+            // a difference in the ordering.
+            if (comparator.isDifferenceExplainedByErrorStatus(baseline, descMsg)) {
+                context.recordSuppressedDifferential();
+                return false;
+            }
+            // A page that moved between the ASC and the DESC probes is volatile noise rather than
+            // an ordering clause: replay the original and require it to still match the baseline.
+            if (!context.isStopped() && context.getRemainingBudget() >= 1) {
+                HttpMessage controlMsg = context.newMessage();
+                context.setParam(controlMsg, originalValue);
+                context.sendAndReceive(controlMsg);
+                if (!comparator.matches(
+                        fixedTemplate,
+                        baseline,
+                        originalValue,
+                        originalValue,
+                        controlMsg,
+                        originalValue,
+                        originalValue)) {
+                    context.recordSuppressedDifferential();
+                    return false;
+                }
+            }
             context.newAlert()
                     .setConfidence(Alert.CONFIDENCE_MEDIUM)
                     .setParam(context.getParamName())
@@ -210,6 +234,13 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
                         originalValue,
                         invalidValue);
         if (!invalidDiffersFromBaseline) {
+            return false;
+        }
+        // An error page for the out-of-range index alone -- rate limited, blocked by a WAF, timed
+        // out -- is not a difference in results. The valid index above already served as the
+        // control: it matched the baseline.
+        if (comparator.isDifferenceExplainedByErrorStatus(baseline, invalidMsg)) {
+            context.recordSuppressedDifferential();
             return false;
         }
 

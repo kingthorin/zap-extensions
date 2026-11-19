@@ -55,6 +55,36 @@ class ExpressionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModul
         assertThat(alertsRaised, hasSize(1));
     }
 
+    /**
+     * The page changes on its own once the second expression has been served, so that difference is
+     * the page moving, not the expression: the replayed original no longer matches.
+     */
+    @Test
+    void shouldNotAlertWhenPageMovesAfterTheSecondExpression() throws Exception {
+        // Given
+        String path = "/sqli/expression/moving/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    private boolean moved;
+
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "id");
+                        if ("4-2".equals(value)) {
+                            moved = true;
+                        }
+                        return newFixedLengthResponse(moved ? "Page two" : "Page one");
+                    }
+                });
+        rule.init(getHttpMessage(path + "?id=1"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
     @Test
     void shouldNotAlertWhenExpressionIsNotEvaluated() throws Exception {
         String path = "/sqli/expression/safe/";
