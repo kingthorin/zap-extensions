@@ -65,7 +65,7 @@ public class BooleanConditionPayloads {
                     // String context: single quote + LIKE with non-obvious prefix operand
                     new Condition("' AND 'abc' LIKE 'a%", "' AND 'abc' LIKE 'z%"),
                     // Numeric context: LIKE with string literal
-                    new Condition("1 AND 'abc' LIKE 'a%", "1 AND 'abc' LIKE 'z%"),
+                    new Condition(" AND 'abc' LIKE 'a%'", " AND 'abc' LIKE 'z%'"),
                     // String context: single quote + IS NULL / IS NOT NULL with comment
                     new Condition("' AND NULL IS NULL -- ", "' AND NULL IS NOT NULL -- "));
 

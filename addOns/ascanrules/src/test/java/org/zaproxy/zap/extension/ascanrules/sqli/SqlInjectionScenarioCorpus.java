@@ -94,7 +94,9 @@ public final class SqlInjectionScenarioCorpus {
                 blindDateFilter(),
                 jsonBodyIdError(),
                 jsonBodyIgnoredFilter(),
-                jsonBodyQuoteServerError());
+                jsonBodyQuoteServerError(),
+                loginNoRowsQuoteBreaks(),
+                loginRejectsEveryQuote());
     }
 
     /** The body a POST scenario sends before the parameter under test, kept short on purpose. */
@@ -684,6 +686,56 @@ public final class SqlInjectionScenarioCorpus {
                                     }
                                     return null;
                                 }));
+    }
+
+    /** Whether {@code value} holds an odd number of single quotes: an unterminated literal. */
+    private static boolean hasOddQuoteCount(String value) {
+        return value.chars().filter(c -> c == '\'').count() % 2 == 1;
+    }
+
+    /**
+     * WAVSEP Case01 and Case03: a login or count query that matches no row for the value sent, and
+     * answers every SQL exception with one fixed text instead of a database error. Boolean has
+     * nothing to compare (every condition runs against an empty result), and no signature is
+     * printed, so only the quote count separates the pages: an odd count breaks the query, an even
+     * count is an escaped literal and the page is back to "login failed".
+     */
+    private static SqlInjectionScenario loginNoRowsQuoteBreaks() {
+        return new SqlInjectionScenario(
+                "login-no-rows-quote-breaks",
+                INJECTABLE,
+                "WAVSEP Case01/Case03 (no rows, fixed exception text)",
+                "/login",
+                "user=smith&pass=secret",
+                () ->
+                        UrlParamValueHandler.builder()
+                                .targetPath("/login")
+                                .targetParam("user")
+                                .when(formParam("user").matches(v -> hasOddQuoteCount(v)))
+                                .thenReturn(200, "<html>Information is unavailable</html>")
+                                .fallbackHtmlResponse("<html>login failed</html>")
+                                .build());
+    }
+
+    /**
+     * The same login page behind a validator that rejects any quote, lone or doubled: the doubled
+     * quote does not repair the page, so the quote-balance technique has to stay quiet.
+     */
+    private static SqlInjectionScenario loginRejectsEveryQuote() {
+        return new SqlInjectionScenario(
+                "login-rejects-every-quote",
+                FP_PRONE,
+                "input validation that rejects quotes",
+                "/login",
+                "user=smith&pass=secret",
+                () ->
+                        UrlParamValueHandler.builder()
+                                .targetPath("/login")
+                                .targetParam("user")
+                                .when(formParam("user").matches(v -> v.contains("'")))
+                                .thenReturn(200, "<html>Information is unavailable</html>")
+                                .fallbackHtmlResponse("<html>login failed</html>")
+                                .build());
     }
 
     /**

@@ -45,6 +45,7 @@ import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ErrorBasedDetectionS
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.ExpressionBasedDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.LoginBypassDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.OrderByDetectionStrategy;
+import org.zaproxy.zap.extension.ascanrules.sqli.strategies.QuoteBalanceDetectionStrategy;
 import org.zaproxy.zap.extension.ascanrules.sqli.strategies.UnionBasedDetectionStrategy;
 import org.zaproxy.zap.model.Tech;
 import org.zaproxy.zap.model.TechSet;
@@ -112,6 +113,7 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
                     new ExpressionBasedDetectionStrategy(),
                     new OrderByDetectionStrategy(),
                     new UnionBasedDetectionStrategy(),
+                    new QuoteBalanceDetectionStrategy(),
                     new LoginBypassDetectionStrategy());
 
     // Per-technique budgets, indexed by attack strength (LOW, MEDIUM, HIGH, INSANE), following
@@ -135,6 +137,8 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
                     Map.entry("BOOLEAN", new int[] {0, 7, 19, 49}),
                     Map.entry("ORDERBY", new int[] {0, 0, 4, 49}),
                     Map.entry("UNION", new int[] {0, 4, 9, 49}),
+                    // Quote balance: lone quote, doubled quote, three quotes (all or nothing).
+                    Map.entry("QUOTEBALANCE", new int[] {0, 3, 3, 3}),
                     Map.entry("LOGINBYPASS", new int[] {0, 5, 5, 5}));
 
     private String paramName;
@@ -262,7 +266,14 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
         initBudgets();
 
         String[] techniqueNames = {
-            "ERROR", "CONDERROR", "BOOLEAN", "EXPRESSION", "ORDERBY", "UNION", "LOGINBYPASS"
+            "ERROR",
+            "CONDERROR",
+            "BOOLEAN",
+            "EXPRESSION",
+            "ORDERBY",
+            "UNION",
+            "QUOTEBALANCE",
+            "LOGINBYPASS"
         };
 
         Integer[] order = techniqueOrder(uri, techniqueNames);

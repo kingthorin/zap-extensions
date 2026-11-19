@@ -153,7 +153,8 @@ class SqlInjectionPresencePriorTest extends AbstractSqlInjectionModularScanRuleT
                 new ExpectedDetection(scenario("sqlite-error-in-500"), "ERROR"),
                 new ExpectedDetection(scenario("boolean-injected-id"), "BOOLEAN"),
                 new ExpectedDetection(scenario("wordpress-tax-query-json"), "ERROR"),
-                new ExpectedDetection(scenario("royal-event-date-filter-canary"), "UNION"));
+                new ExpectedDetection(scenario("royal-event-date-filter-canary"), "UNION"),
+                new ExpectedDetection(scenario("login-no-rows-quote-breaks"), "QUOTEBALANCE"));
     }
 
     /** One injectable corpus row and the technique the rule is expected to find it with. */
