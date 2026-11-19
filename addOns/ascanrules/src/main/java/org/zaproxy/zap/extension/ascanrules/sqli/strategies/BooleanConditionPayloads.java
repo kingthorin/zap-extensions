@@ -44,7 +44,7 @@ public class BooleanConditionPayloads {
 
     public record Condition(String andTrue, String andFalse) {}
 
-    /** 9 boolean condition pairs for AND_TRUE / AND_FALSE differential detection. */
+    /** 11 boolean condition pairs for AND_TRUE / AND_FALSE differential detection. */
     public static final List<Condition> CONDITIONS =
             List.of(
                     // Baseline rule 40018 SQL_LOGIC_AND_TRUE/FALSE[0] and [1]

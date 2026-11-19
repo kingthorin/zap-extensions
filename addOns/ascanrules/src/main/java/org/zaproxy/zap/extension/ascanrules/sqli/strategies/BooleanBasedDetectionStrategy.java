@@ -27,7 +27,7 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ResponseComparator;
 import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
 /**
- * Detects boolean-based blind SQL injection using a restrict-then-verify approach: for each of 9
+ * Detects boolean-based blind SQL injection using a restrict-then-verify approach: for each of 11
  * payload pairs, sends AND_TRUE first; if it matches the baseline, sends AND_FALSE; if AND_FALSE
  * differs from the baseline, the parameter is injectable and an alert is raised.
  *

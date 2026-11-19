@@ -98,7 +98,7 @@ public interface ScanContext {
     /**
      * Sets the current technique identifier so budget tracking is per-technique. Called by the scan
      * rule before invoking each {@link DetectionStrategy}, passing one of: "ERROR", "EXPRESSION",
-     * "BOOLEAN", "ORDERBY", "UNION", "LOGINBYPASS".
+     * "BOOLEAN", "ORDERBY", "UNION", "QUOTEBALANCE", "LOGINBYPASS".
      */
     void setCurrentTechnique(String technique);
 

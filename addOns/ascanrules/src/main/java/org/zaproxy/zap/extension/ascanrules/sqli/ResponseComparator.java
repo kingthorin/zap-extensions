@@ -368,21 +368,6 @@ public class ResponseComparator {
     }
 
     /**
-     * Whether a response fits a template learned from two renders of the baseline: same status (and
-     * for redirects, the same {@code Location}, exactly as {@link #matchesExactlyAfterStripping}
-     * requires), and stable content that the template's literals cover in order — the learned
-     * wildcards absorb whatever moves between requests.
-     *
-     * @param template the template learned for this parameter
-     * @param a the baseline message (identity side of the template)
-     * @param aOriginalValue the original parameter value for {@code a}
-     * @param aValueSent the value actually sent in {@code a}'s request
-     * @param b the probe message
-     * @param bOriginalValue the original parameter value for {@code b}
-     * @param bValueSent the value actually sent in {@code b}'s request
-     * @return true if the probe matches the template
-     */
-    /**
      * Whether {@code a} and {@code b} are the same outcome, comparing against a volatile-content
      * {@code template} when one was derived and falling back to exact-after-stripping when it was
      * not ({@code template == null}). Lets callers drop the {@code template != null ? … : …} fork.
@@ -402,6 +387,21 @@ public class ResponseComparator {
                         template, a, aOriginalValue, aValueSent, b, bOriginalValue, bValueSent);
     }
 
+    /**
+     * Whether a response fits a template learned from two renders of the baseline: same status (and
+     * for redirects, the same {@code Location}, exactly as {@link #matchesExactlyAfterStripping}
+     * requires), and stable content that the template's literals cover in order — the learned
+     * wildcards absorb whatever moves between requests.
+     *
+     * @param template the template learned for this parameter
+     * @param a the baseline message (identity side of the template)
+     * @param aOriginalValue the original parameter value for {@code a}
+     * @param aValueSent the value actually sent in {@code a}'s request
+     * @param b the probe message
+     * @param bOriginalValue the original parameter value for {@code b}
+     * @param bValueSent the value actually sent in {@code b}'s request
+     * @return true if the probe matches the template
+     */
     public boolean matchesTemplate(
             VolatileTemplate template,
             HttpMessage a,
