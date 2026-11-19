@@ -139,7 +139,8 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
                     Map.entry("UNION", new int[] {0, 4, 9, 49}),
                     // Quote balance: lone quote, doubled quote, three quotes (all or nothing).
                     Map.entry("QUOTEBALANCE", new int[] {0, 3, 3, 3}),
-                    Map.entry("LOGINBYPASS", new int[] {0, 5, 5, 5}));
+                    // Login bypass: gated to HIGH/INSANE, 2 requests (bypass + restrict-verify).
+                    Map.entry("LOGINBYPASS", new int[] {0, 0, 2, 2}));
 
     private String paramName;
     private String originalValue;

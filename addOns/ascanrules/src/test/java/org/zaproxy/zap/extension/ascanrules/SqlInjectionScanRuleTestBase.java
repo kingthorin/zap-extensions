@@ -192,6 +192,27 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
     }
 
     /**
+     * Whether {@code value} is a login-bypass payload that should defeat the password check in the
+     * fixtures below ({@link LoginBypass}, {@link
+     * JuiceShopSqlInjection#shouldAlertLoginBypassOnAdminLogin} and {@link
+     * MutillidaeSqlInjection#shouldAlertWhenSuccessfulLoginRedirects}).
+     *
+     * <p>The generic rule (40018) only knows the classic {@code OR} tautology (e.g. {@code admin'
+     * OR '1'='1' -- }), so that is the default here. A rule that anchors its bypass to the value
+     * already in the request instead -- dropping the password check with a trailing SQL comment,
+     * rather than widening which rows the query matches -- overrides this method to recognise its
+     * own probe shape (see {@code SqlInjectionScanRule424242UnitTest}). That keeps one set of
+     * fixtures benchmarking either exploit style, rather than hardcoding one technique's exact
+     * payload text into tests shared with the other rule.
+     *
+     * @param value a parameter value the rule under test sent
+     * @return {@code true} if {@code value} should log the fixture's user in
+     */
+    protected boolean isLoginBypassPayload(String value) {
+        return value != null && value.contains("'") && SQL_OR_OPERATOR.matcher(value).find();
+    }
+
+    /**
      * The number of requests {@code FiveHundredErrors.shouldAlertIf500OnSingleQuote} is expected to
      * cost, for a rule that alerts on a database-silent 500. The generic rule (40018) sends the
      * quote against the base message and stops, spending two requests (control, quote). The modular
@@ -1352,9 +1373,16 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
         private static final String FAILURE_BODY = "login failed";
 
         private UrlParamValueHandler orTautologyLoginPage() {
+            // The condition goes through isLoginBypassPayload() -- not an inline check -- so a
+            // rule that anchors its bypass differently (see that method's javadoc) can override it
+            // and still be exercised, and pass, against this exact fixture.
             return UrlParamValueHandler.builder()
                     .targetParam("username")
-                    .when(param("username").matches(v -> v.contains("'") && v.contains("OR")))
+                    .when(
+                            param("username")
+                                    .matches(
+                                            SqlInjectionScanRuleTestBase.this
+                                                    ::isLoginBypassPayload))
                     .thenReturnHtml(SUCCESS_BODY)
                     .fallbackHtmlResponse(FAILURE_BODY)
                     .build();
@@ -1363,6 +1391,10 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
         @Test
         void shouldAlertLoginBypassWithDifferent200Responses() throws Exception {
             // Given
+            // HIGH strength: a rule that gates its login-bypass technique to HIGH/INSANE (424242
+            // does, see isLoginBypassPayload()) needs it reached here; it costs 40018 nothing,
+            // since this test only asserts that some alert was raised for the parameter.
+            rule.setAttackStrength(AttackStrength.HIGH);
             nano.addHandler(orTautologyLoginPage());
             rule.init(getHttpMessage("/?username=admin"), parent);
 
@@ -1457,18 +1489,22 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
             // Given: only the email is spliced in as-is (the password is hashed first), so a
             // tautology in the email logs the first user in -- by returning a session rather than
             // the "Invalid email or password." message.
+            // HIGH strength: a rule that gates its login-bypass technique to HIGH/INSANE (424242
+            // does, see isLoginBypassPayload()) needs it reached here; it costs 40018 nothing,
+            // since this test only asserts that some alert was raised for the parameter.
+            rule.setAttackStrength(AttackStrength.HIGH);
             nano.addHandler(
                     UrlParamValueHandler.builder()
                             .targetPath(LOGIN_PATH)
                             .targetParam("email")
+                            // Through isLoginBypassPayload() (see its javadoc), so a rule that
+                            // anchors its bypass to the request's own value instead of an OR
+                            // tautology can override it and still be exercised, and pass, here.
                             .when(
                                     formParam("email")
                                             .matches(
-                                                    value ->
-                                                            value.contains("'")
-                                                                    && SQL_OR_OPERATOR
-                                                                            .matcher(value)
-                                                                            .find()))
+                                                    SqlInjectionScanRuleTestBase.this
+                                                            ::isLoginBypassPayload))
                             .thenReturnJson(LOGIN_SUCCESS_BODY)
                             .when(formParam("email"))
                             .thenReturn(401, LOGIN_FAILED_BODY)
@@ -1623,20 +1659,24 @@ abstract class SqlInjectionScanRuleTestBase<T extends AbstractAppParamPlugin>
             // in, and a successful login is a 302 to index.php?popUpNotificationCode=AU1. The scan
             // follows that redirect, so what the rule gets to judge on is the landing page, whose
             // menu offers a logged-in user "Logout" where the login form offered to log in.
+            // HIGH strength: a rule that gates its login-bypass technique to HIGH/INSANE (424242
+            // does, see isLoginBypassPayload()) needs it reached here; it costs 40018 nothing,
+            // since this test only asserts that some alert was raised for the parameter.
+            rule.setAttackStrength(AttackStrength.HIGH);
             nano.addHandler(
                     UrlParamValueHandler.builder()
                             .targetPath(INDEX_PATH)
                             .targetParam("username")
                             .when(param("page").is("home.php"))
                             .thenReturn(200, LOGGED_IN_BODY)
+                            // Through isLoginBypassPayload() (see its javadoc), so a rule that
+                            // anchors its bypass to the request's own value instead of an OR
+                            // tautology can override it and still be exercised, and pass, here.
                             .when(
                                     formParam("username")
                                             .matches(
-                                                    value ->
-                                                            value.contains("'")
-                                                                    && SQL_OR_OPERATOR
-                                                                            .matcher(value)
-                                                                            .find()))
+                                                    SqlInjectionScanRuleTestBase.this
+                                                            ::isLoginBypassPayload))
                             .withStatus(302)
                             .withHeader(
                                     HttpHeader.LOCATION,
