@@ -59,6 +59,39 @@ class UnionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
         assertThat("Should detect UNION-based injection in LIKE clause", alertsRaised, hasSize(1));
     }
 
+    /** Engines differ in the case of their messages; the match must not depend on it. */
+    @Test
+    void shouldAlertWhenUnionErrorFragmentCaseDiffersFromTheSignature() throws Exception {
+        // Given
+        String path = "/sqli/union/lowercase/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "msg");
+                        if (value != null
+                                && value.toLowerCase(java.util.Locale.ROOT).contains("union")) {
+                            return newFixedLengthResponse(
+                                    NanoHTTPD.Response.Status.OK,
+                                    NanoHTTPD.MIME_HTML,
+                                    "the used select statements have a different number of"
+                                            + " columns");
+                        }
+                        return newFixedLengthResponse(normalResponse());
+                    }
+                });
+        rule.init(getHttpMessage(path + "?msg=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(
+                alertsRaised.get(0).getEvidence(),
+                is(equalTo("The used SELECT statements have a different number of columns")));
+    }
+
     @Test
     void shouldNotAlertOnNormalSearchQuery() throws Exception {
         // A search page that returns the same results no matter what is put in the parameter:

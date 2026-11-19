@@ -62,7 +62,6 @@ public final class DbErrorSignatures {
                         "com.inet.tds",
                         "com.ashna.jturbo",
                         "weblogic.jdbc.mssqlserver",
-                        "[Microsoft]",
                         "[SQLServer]",
                         "[SQLServer 2000 Driver for JDBC]",
                         "net.sourceforge.jtds.jdbc",
@@ -86,7 +85,6 @@ public final class DbErrorSignatures {
                 "Oracle",
                 List.of(
                         "oracle.jdbc",
-                        "SQLSTATE[HY",
                         "ORA-00933",
                         "ORA-06512",
                         "SQL command not properly ended",
@@ -135,8 +133,7 @@ public final class DbErrorSignatures {
                         "Unexpected token , requires FROM in statement",
                         "Unexpected end of command in statement",
                         "Column count does not match in statement",
-                        "Table not found in statement",
-                        "Unexpected token:"),
+                        "Table not found in statement"),
                 List.of(
                         "Unexpected end of command in statement",
                         "Column count does not match in statement")),
@@ -164,9 +161,18 @@ public final class DbErrorSignatures {
                 // "'": syntax error, the WAVSEP 500Error / corpus sqlite-error-in-500 shape
                 // -- matches, and the captured text becomes the alert evidence.
                 List.of("near \".+\": syntax error")),
+        // Signatures that no single engine owns, so they carry no engine label and, like the
+        // driver-framework ones, are confirmed by a second probe before they are trusted:
+        // "[Microsoft]" prefixes ODBC/OLE DB messages from Access, Excel and others as well as SQL
+        // Server, "SQLSTATE[HY" is PDO's rendering of the general-error class for any driver (it
+        // is also what a refused connection prints), and "Unexpected token:" is what JavaScript and
+        // JSON parsers say too.
         GENERIC(
                 "Generic SQL RDBMS",
                 List.of(
+                        "[Microsoft]",
+                        "SQLSTATE[HY",
+                        "Unexpected token:",
                         "com.ibatis.common.jdbc",
                         "org.hibernate",
                         "sun.jdbc.odbc",

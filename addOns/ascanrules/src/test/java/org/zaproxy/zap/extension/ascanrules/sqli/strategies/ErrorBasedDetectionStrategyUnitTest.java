@@ -284,6 +284,125 @@ class ErrorBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
         }
     }
 
+    /** An application-server banner is not database content: Oracle WebLogic's name must not do. */
+    @Test
+    void shouldNotAlertWhenPage500sWithOnlyAnApplicationServerNamedOracle() throws Exception {
+        // Given
+        String path = "/sqli/error/weblogic-500/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "id");
+                        if (value != null && value.contains("'")) {
+                            return newFixedLengthResponse(
+                                    Response.Status.INTERNAL_ERROR,
+                                    NanoHTTPD.MIME_HTML,
+                                    "<html><body>Oracle WebLogic Server: the request could not be"
+                                            + " processed (db2f3a9c)</body></html>");
+                        }
+                        return newFixedLengthResponse("Some ordinary content for " + value);
+                    }
+                });
+        rule.init(getHttpMessage(path + "?id=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    @Test
+    void shouldAlertWhenPage500sWithDatabaseErrorCode() throws Exception {
+        // Given
+        String path = "/sqli/error/ora-500/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "id");
+                        if (value != null && value.contains("'")) {
+                            return newFixedLengthResponse(
+                                    Response.Status.INTERNAL_ERROR,
+                                    NanoHTTPD.MIME_HTML,
+                                    "<html><body>Request failed: ORA-01756 in statement"
+                                            + "</body></html>");
+                        }
+                        return newFixedLengthResponse("Some ordinary content for " + value);
+                    }
+                });
+        rule.init(getHttpMessage(path + "?id=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+    }
+
+    /**
+     * PDO prints {@code SQLSTATE[HY000]} for any driver and for failures that are not about the
+     * query at all. One fixed message for every quote, whatever surrounds it, says nothing about
+     * what the query did.
+     */
+    @Test
+    void shouldNotAlertOnCannedPdoGeneralErrorForAnyQuote() throws Exception {
+        // Given
+        String path = "/sqli/error/pdo-canned/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "id");
+                        if (value != null && value.contains("'")) {
+                            return newFixedLengthResponse(
+                                    Response.Status.OK,
+                                    NanoHTTPD.MIME_HTML,
+                                    "SQLSTATE[HY000]: General error");
+                        }
+                        return newFixedLengthResponse("Some ordinary content for " + value);
+                    }
+                });
+        rule.init(getHttpMessage(path + "?id=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    @Test
+    void shouldAlertOnPdoGeneralErrorThatDependsOnTheValueAndNotLabelItOracle() throws Exception {
+        // Given
+        String path = "/sqli/error/pdo-dependent/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "id");
+                        if (value != null && value.contains("'")) {
+                            return newFixedLengthResponse(
+                                    Response.Status.OK,
+                                    NanoHTTPD.MIME_HTML,
+                                    "SQLSTATE[HY000]: General error near " + value);
+                        }
+                        return newFixedLengthResponse("Some ordinary content for " + value);
+                    }
+                });
+        rule.init(getHttpMessage(path + "?id=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(alertsRaised.get(0).getEvidence(), is(equalTo("SQLSTATE[HY")));
+        assertThat(
+                alertsRaised.get(0).getOtherInfo(), is(equalTo("Likely RDBMS: Generic SQL RDBMS")));
+    }
+
     /**
      * 500s with a generic, database-silent error whenever the value contains a SQL metacharacter.
      */

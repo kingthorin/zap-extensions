@@ -25,6 +25,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.addon.commonlib.http.ComparableResponse;
@@ -123,8 +124,11 @@ public class UnionBasedDetectionStrategy implements DetectionStrategy {
             for (Dbms dbms : candidates) {
                 for (String unionFragment : dbms.getUnionFragments()) {
                     // Fragment absent from baseline AND present in attack => hit
-                    boolean absentFromBaseline = !baselineStripped.contains(unionFragment);
-                    boolean presentInAttack = attackStripped.contains(unionFragment);
+                    String fragment = unionFragment.toLowerCase(Locale.ROOT);
+                    boolean absentFromBaseline =
+                            !baselineStripped.toLowerCase(Locale.ROOT).contains(fragment);
+                    boolean presentInAttack =
+                            attackStripped.toLowerCase(Locale.ROOT).contains(fragment);
                     if (absentFromBaseline && presentInAttack) {
                         context.newAlert()
                                 .setConfidence(Alert.CONFIDENCE_HIGH)

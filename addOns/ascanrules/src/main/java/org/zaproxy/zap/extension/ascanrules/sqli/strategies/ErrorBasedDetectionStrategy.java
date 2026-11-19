@@ -21,8 +21,8 @@ package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.extension.ascanrules.sqli.DbErrorSignatures;
@@ -58,22 +58,18 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
             List.of("'", "\"", "';", "\");", "'(", ")", "NULL", "'\"");
 
     /**
-     * Case-insensitive markers of database content in an error page. Looser than {@link
-     * DbErrorSignatures} on purpose: the server-error path also has to work with custom error pages
-     * that mention the database without quoting any engine's message verbatim.
+     * Case-insensitive markers of database content in an error page, matched as whole words. Looser
+     * than {@link DbErrorSignatures} on purpose: the server-error path also has to work with custom
+     * error pages that mention the database without quoting any engine's message verbatim. Whole
+     * words, and an {@code ORA-nnnnn} code rather than the name "Oracle", so a page that merely
+     * names its application server (Oracle WebLogic) or contains "db2" inside a token does not
+     * count.
      */
-    private static final List<String> DB_ERROR_MENTIONS =
-            List.of(
-                    "sql",
-                    "jdbc",
-                    "odbc",
-                    "sqlite",
-                    "mysql",
-                    "mariadb",
-                    "postgres",
-                    "pgsql",
-                    "oracle",
-                    "db2");
+    private static final Pattern DB_ERROR_MENTION =
+            Pattern.compile(
+                    "\\b(?:sql|sqlite|mysql|mariadb|postgres|postgresql|pgsql|jdbc|odbc|db2|sqlstate"
+                            + "|sqlexception|ora-\\d{5})\\b",
+                    Pattern.CASE_INSENSITIVE);
 
     @Override
     public boolean detect(ScanContext context) throws IOException {
@@ -233,8 +229,7 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
 
     /** Whether the response body mentions the database, driver content, or an engine name. */
     private static boolean mentionsDbErrorText(HttpMessage msg) {
-        String body = msg.getResponseBody().toString().toLowerCase(Locale.ROOT);
-        return DB_ERROR_MENTIONS.stream().anyMatch(body::contains);
+        return DB_ERROR_MENTION.matcher(msg.getResponseBody().toString()).find();
     }
 
     private List<String> selectPayloads(ScanContext context) {
