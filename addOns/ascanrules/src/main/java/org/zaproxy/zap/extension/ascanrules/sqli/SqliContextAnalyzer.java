@@ -19,24 +19,51 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
+import java.util.Locale;
 import java.util.regex.Pattern;
 import org.parosproxy.paros.network.HttpMessage;
+import org.zaproxy.zap.extension.ascanrules.sqli.ParameterContext.ValueShape;
 
 /** Analyzes baseline response to infer parameter context (numeric, string, etc.). */
 public class SqliContextAnalyzer {
 
     private static final Pattern NUMERIC_VALUE = Pattern.compile("^\\d+$");
+    private static final Pattern DATE_VALUE = Pattern.compile("^\\d{4}-\\d{1,2}-\\d{1,2}$");
+    private static final Pattern IDENTIFIER_VALUE = Pattern.compile("^[A-Za-z_][A-Za-z0-9_.]*$");
+    private static final Pattern SORT_DIRECTION_VALUE =
+            Pattern.compile("(?i)^([A-Za-z_][A-Za-z0-9_.]*\\s+)?(asc|desc)$");
+    private static final Pattern ORDER_BY_NAME =
+            Pattern.compile(
+                    "(?i)^(sort|order|orderby|order_by|sortby|sort_by|sortcol|sortcolumn|sort_column|sidx|ordercol|order_column)$");
 
     /**
-     * Analyzes the baseline response to detect parameter context hints.
+     * Analyzes the parameter value and name for context hints.
      *
+     * @param paramName the parameter name, or {@code null} if unknown
      * @param originalValue the un-injected parameter value
      * @param baselineMsg the HTTP message from the baseline request
      * @return ParameterContext with detection hints
      */
-    public static ParameterContext analyze(String originalValue, HttpMessage baselineMsg) {
+    public static ParameterContext analyze(
+            String paramName, String originalValue, HttpMessage baselineMsg) {
         boolean isNumericContext = NUMERIC_VALUE.matcher(originalValue).matches();
         boolean isStringLiteralContext = !isNumericContext;
-        return new ParameterContext(isNumericContext, isStringLiteralContext);
+        ValueShape shape;
+        if (isNumericContext) {
+            shape = ValueShape.NUMERIC;
+        } else if (DATE_VALUE.matcher(originalValue).matches()) {
+            shape = ValueShape.DATE;
+        } else if (IDENTIFIER_VALUE.matcher(originalValue).matches()) {
+            shape = ValueShape.IDENTIFIER;
+        } else {
+            shape = ValueShape.TEXT;
+        }
+        boolean orderByHint =
+                (paramName != null
+                                && ORDER_BY_NAME
+                                        .matcher(paramName.toLowerCase(Locale.ROOT))
+                                        .matches())
+                        || SORT_DIRECTION_VALUE.matcher(originalValue.trim()).matches();
+        return new ParameterContext(isNumericContext, isStringLiteralContext, shape, orderByHint);
     }
 }

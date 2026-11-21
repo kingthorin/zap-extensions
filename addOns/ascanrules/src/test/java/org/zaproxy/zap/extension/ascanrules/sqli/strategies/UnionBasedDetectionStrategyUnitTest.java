@@ -25,11 +25,14 @@ import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.startsWith;
 
 import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
@@ -109,6 +112,250 @@ class UnionBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularSca
 
         // Normal query should not trigger alert
         assertThat(alertsRaised, empty());
+    }
+
+    /**
+     * WAVSEP Case15 shape: an unquoted date that matches no rows, so AND-true and AND-false look
+     * alike and only the UNION can show anything. A UNION with the query's four columns adds a row;
+     * any other count fails like any other bad input. The boolean probes leave the unquoted closing
+     * behind, which is what the column count is sent with.
+     */
+    @Test
+    void shouldAlertWhenExactlyOneColumnCountIsAccepted() throws Exception {
+        // Given
+        String path = "/sqli/union/column-count/";
+        nano.addHandler(new ColumnCountHandler(path, 4, false, false));
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?transactionDate=2010-02-02"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(alertsRaised.get(0).getConfidence(), is(Alert.CONFIDENCE_MEDIUM));
+        assertThat(
+                alertsRaised.get(0).getAttack(),
+                is(equalTo("2010-02-02 UNION ALL SELECT NULL,NULL,NULL,NULL -- ")));
+        assertThat(rule.getParameterContext().getLearnedClosing(), is(equalTo("")));
+    }
+
+    /** The same page on an engine with md5(): the canary at the found count makes it HIGH. */
+    @Test
+    void shouldAlertHighWhenTheCanaryAtTheFoundColumnCountIsComputed() throws Exception {
+        // Given
+        String path = "/sqli/union/column-count-md5/";
+        ColumnCountHandler handler = new ColumnCountHandler(path, 4, true, false);
+        nano.addHandler(handler);
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?transactionDate=2010-02-02"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(alertsRaised.get(0).getConfidence(), is(Alert.CONFIDENCE_HIGH));
+        assertThat(
+                alertsRaised.get(0).getAttack(),
+                startsWith("2010-02-02 UNION ALL SELECT NULL,NULL,NULL,md5('"));
+        assertThat(alertsRaised.get(0).getEvidence(), is(equalTo(handler.lastHash())));
+    }
+
+    /**
+     * Rows that change on every request (another page writing to the same table) do not hide the
+     * column count: the rejected counts all get the same error page, which does not move with the
+     * data.
+     */
+    @Test
+    void shouldAlertOnColumnCountWhenTheListedRowsChangeOnEveryRequest() throws Exception {
+        // Given
+        String path = "/sqli/union/column-count-drifting/";
+        nano.addHandler(new ColumnCountHandler(path, 4, false, true));
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?transactionDate=2010-02-02"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(
+                alertsRaised.get(0).getAttack(),
+                is(equalTo("2010-02-02 UNION ALL SELECT NULL,NULL,NULL,NULL -- ")));
+    }
+
+    /**
+     * A strictly validated numeric id: it answers anything but an existing id with the same
+     * "invalid id" page, so every column count answers alike and none stands out.
+     */
+    @Test
+    void shouldNotAlertWhenPageAnswersEveryColumnCountLikeTheControl() throws Exception {
+        // Given
+        String path = "/sqli/union/strict-id/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "id");
+                        return newFixedLengthResponse(
+                                "5".equals(value)
+                                        ? "<html><body><h1>Widget</h1><p>Price 10, in stock,"
+                                                + " ships today</p></body></html>"
+                                        : "<html><body>invalid id</body></html>");
+                    }
+                });
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?id=5"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {400, 403, 429, 500})
+    void shouldNotAlertWhenUnionOnlyTurnsIntoAnErrorStatus(int status) throws Exception {
+        // Given: normal for the baseline and the control, an error status for any UNION.
+        String path = "/sqli/union/error-status/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "msg");
+                        if (value != null
+                                && value.toUpperCase(java.util.Locale.ROOT).contains("UNION")) {
+                            return newFixedLengthResponse(
+                                    Response.Status.lookup(status),
+                                    NanoHTTPD.MIME_HTML,
+                                    "<html><body>Request rejected</body></html>");
+                        }
+                        return newFixedLengthResponse(normalResponse());
+                    }
+                });
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?msg=test"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    /**
+     * A page whose answer depends on how many commas the value has (a comma-separated list filter):
+     * every column count answers differently, so no single count stands out.
+     */
+    @Test
+    void shouldNotAlertWhenEveryColumnCountAnswersDifferently() throws Exception {
+        // Given
+        String path = "/sqli/union/comma-list/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "ids");
+                        long items =
+                                value == null ? 0 : value.chars().filter(c -> c == ',').count();
+                        return newFixedLengthResponse(
+                                "<html><body>" + (items + 1) + " items selected</body></html>");
+                    }
+                });
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?ids=7"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    /**
+     * A search on an unquoted date column, the shape of WAVSEP Case15: an {@code AND} condition is
+     * accepted (matching no rows either way, as the date compares as arithmetic), a {@code UNION}
+     * with the query's column count adds its row, and anything else is a database error, which the
+     * page reports as "Information is unavailable".
+     */
+    private static class ColumnCountHandler extends NanoServerHandler {
+
+        private static final String BASE = "2010-02-02";
+
+        private final int columns;
+        private final boolean md5;
+        private final boolean drifting;
+        private int writes;
+        private String lastHash = "";
+
+        ColumnCountHandler(String path, int columns, boolean md5, boolean drifting) {
+            super(path);
+            this.columns = columns;
+            this.md5 = md5;
+            this.drifting = drifting;
+        }
+
+        String lastHash() {
+            return lastHash;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String value = getFirstParamValue(session, "transactionDate");
+            if (value == null || !value.startsWith(BASE)) {
+                return error();
+            }
+            String rest = value.substring(BASE.length());
+            if (rest.isEmpty() || rest.matches(" AND [^'\"]+ -- ")) {
+                return table("");
+            }
+            java.util.regex.Matcher union =
+                    java.util.regex.Pattern.compile("^ UNION ALL SELECT (.+) -- $").matcher(rest);
+            if (!union.matches()) {
+                return error();
+            }
+            String[] selected = union.group(1).split(",");
+            if (selected.length != columns) {
+                return error();
+            }
+            StringBuilder row = new StringBuilder("<tr>");
+            for (String column : selected) {
+                java.util.regex.Matcher call =
+                        java.util.regex.Pattern.compile("^md5\\('([^']*)'\\)$").matcher(column);
+                String cell;
+                if ("NULL".equals(column)) {
+                    cell = "null";
+                } else if (md5 && call.matches()) {
+                    try {
+                        lastHash = UnionBasedDetectionStrategy.md5Hex(call.group(1));
+                    } catch (Exception e) {
+                        return error();
+                    }
+                    cell = lastHash;
+                } else {
+                    return error();
+                }
+                row.append("<td>").append(cell).append("</td>");
+            }
+            return table(row.append("</tr>").toString());
+        }
+
+        private Response table(String rows) {
+            String written =
+                    drifting ? "<tr><td>895</td><td>written " + (writes++) + "</td></tr>" : "";
+            return newFixedLengthResponse(
+                    "<html><body><p>The list of transactions:</p><table><tr><th>transactionId</th>"
+                            + "<th>sum</th><th>description</th><th>transactionDate</th></tr>"
+                            + written
+                            + rows
+                            + "</table></body></html>");
+        }
+
+        private static Response error() {
+            return newFixedLengthResponse("<html><body>Information is unavailable</body></html>");
+        }
     }
 
     private static String normalResponse() {

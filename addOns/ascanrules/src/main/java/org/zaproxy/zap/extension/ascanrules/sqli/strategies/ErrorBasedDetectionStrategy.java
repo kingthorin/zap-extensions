@@ -49,9 +49,13 @@ public class ErrorBasedDetectionStrategy implements DetectionStrategy {
     private static final List<String> ERROR_PAYLOADS_STRING =
             List.of("'", "\"", "';", "\");", "'(");
 
-    /** Numeric-context payloads: no quotes needed. */
+    /**
+     * Numeric-context payloads. A digits-only value is often quoted in the query all the same
+     * ({@code WHERE id='1'}), so the quotes go first, as they do in baseline rule 40018 for every
+     * parameter; the unquoted shapes follow.
+     */
     private static final List<String> ERROR_PAYLOADS_NUMERIC =
-            List.of("+NULL", ",NULL", " NULL", " OR NULL", " AND NULL");
+            List.of("'", "\"", "+NULL", ",NULL", " NULL", " OR NULL", " AND NULL");
 
     /** Fallback payloads for unknown context. */
     private static final List<String> ERROR_PAYLOADS_FALLBACK =

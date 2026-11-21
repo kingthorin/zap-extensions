@@ -252,6 +252,135 @@ class OrderByDetectionStrategyUnitTest extends AbstractSqlInjectionModularScanRu
     }
 
     /**
+     * WAVSEP Case05 shape, with the listed rows changing between requests (another page writing to
+     * the same table): ASC never matches the baseline, but a valid sort position still gets a list
+     * while an out-of-range one gets exactly the page a bad value gets. The parameter name marks it
+     * as a sort parameter, so ORDER BY runs before UNION.
+     */
+    @Test
+    void shouldAlertWhenSortPositionIsRejectedLikeABadValueWhileRowsChange() throws Exception {
+        // Given
+        String path = "/sqli/orderby/sort-position/";
+        nano.addHandler(new SortClauseHandler(path, true));
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?orderby=msgid"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(alertsRaised.get(0).getAttack(), is(equalTo("msgid,99")));
+        assertThat(
+                "ORDER BY ran ahead of UNION: " + rule.getTechniqueRequests(),
+                rule.getTechniqueRequests().containsKey("UNION"),
+                is(false));
+    }
+
+    /** A sort parameter checked against a list of allowed values accepts no appended position. */
+    @Test
+    void shouldNotAlertWhenTheSortValueIsCheckedAgainstAnAllowList() throws Exception {
+        // Given
+        String path = "/sqli/orderby/allow-list/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "orderby");
+                        return newFixedLengthResponse(
+                                "msgid".equals(value) || "title".equals(value)
+                                        ? "<html><body><table><tr><td>1</td></tr>"
+                                                + "<tr><td>2</td></tr></table></body></html>"
+                                        : "<html><body>Unknown sort column</body></html>");
+                    }
+                });
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?orderby=msgid"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    /**
+     * A date bound to a prepared statement, on a database that parses dates leniently: {@code
+     * 2010-02-02,1} reads as a valid date and time and {@code 2010-02-02,99} does not, which looks
+     * like an accepted and a rejected sort position but is only the date parsing (WAVSEP's 200Valid
+     * Case14 answers the same way).
+     */
+    @Test
+    void shouldNotAlertWhenADateIsParsedLenientlyByTheDatabase() throws Exception {
+        // Given
+        String path = "/sqli/orderby/lenient-date/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "transactionDate");
+                        boolean parses =
+                                value != null
+                                        && value.matches("2010-02-02([ ,T:]([01]?\\d|2[0-3]))?");
+                        return newFixedLengthResponse(
+                                parses ? "Query executed" : "Information is unavailable");
+                    }
+                });
+        rule.setAttackStrength(AttackStrength.HIGH);
+        rule.init(getHttpMessage(path + "?transactionDate=2010-02-02"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+    }
+
+    /**
+     * {@code SELECT msgid, title, message FROM messages ORDER BY <value>}: a valid ORDER BY
+     * expression lists the rows, an invalid one is a database error the page reports as
+     * "Information is unavailable". With {@code drifting}, a row comes and goes between requests.
+     */
+    private static class SortClauseHandler extends NanoServerHandler {
+
+        private static final java.util.regex.Pattern VALID =
+                java.util.regex.Pattern.compile(
+                        "(?i)^msgid(\\s+(ASC|DESC))?(\\s+--\\s*)?$|^msgid,[1-3]$");
+
+        private final boolean drifting;
+        private int writes;
+
+        SortClauseHandler(String path, boolean drifting) {
+            super(path);
+            this.drifting = drifting;
+        }
+
+        @Override
+        protected Response serve(IHTTPSession session) {
+            String value = getFirstParamValue(session, "orderby");
+            if (value == null || !VALID.matcher(value).matches()) {
+                return newFixedLengthResponse(
+                        "<html><body>Information is unavailable</body></html>");
+            }
+            java.util.List<String> rows =
+                    new java.util.ArrayList<>(
+                            java.util.List.of(
+                                    "<tr><td>1</td><td>Welcome</td></tr>",
+                                    "<tr><td>2</td><td>Remember</td></tr>",
+                                    "<tr><td>3</td><td>Expire</td></tr>"));
+            // Another writer adds a row on every other request and removes it again.
+            if (drifting && writes++ % 2 == 1) {
+                rows.add(1, "<tr><td>4</td><td>Added by another page</td></tr>");
+            }
+            if (value.toUpperCase(java.util.Locale.ROOT).contains("DESC")) {
+                java.util.Collections.reverse(rows);
+            }
+            return newFixedLengthResponse(
+                    "<html><body><table>" + String.join("", rows) + "</table></body></html>");
+        }
+    }
+
+    /**
      * An ORDER BY position page rotating a per-request counter line: {@code ASC} and a valid index
      * keep the natural order, {@code DESC} reverses it, an out-of-range index errors.
      */

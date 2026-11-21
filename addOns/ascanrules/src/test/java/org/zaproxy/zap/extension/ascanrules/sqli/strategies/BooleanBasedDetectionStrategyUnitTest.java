@@ -19,6 +19,7 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli.strategies;
 
+import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
@@ -27,10 +28,13 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.zaproxy.zap.testutils.RequestCondition.param;
 
+import fi.iki.elonen.NanoHTTPD.IHTTPSession;
+import fi.iki.elonen.NanoHTTPD.Response;
 import org.junit.jupiter.api.Test;
 import org.zaproxy.zap.extension.ascanrules.sqli.AbstractSqlInjectionModularScanRuleTest;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionModularScanRule;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenarioCorpus;
+import org.zaproxy.zap.testutils.NanoServerHandler;
 import org.zaproxy.zap.testutils.UrlParamValueHandler;
 
 /**
@@ -143,4 +147,36 @@ class BooleanBasedDetectionStrategyUnitTest extends AbstractSqlInjectionModularS
 
     /** The body a page returns for the original value and for a true condition. */
     private static final String TRUE_CONDITION_CONTENT = SqlInjectionScenarioCorpus.NORMAL_CONTENT;
+
+    /**
+     * A quoted value whose query matches no rows: AND-true and AND-false both answer like the
+     * baseline, so there is no differential, but the probe that closed the quote was accepted while
+     * the unquoted one was not, which is the closing the UNION strategy uses.
+     */
+    @Test
+    void shouldLearnTheClosingFromAnAcceptedAndTrueProbeEvenWithoutADifferential()
+            throws Exception {
+        // Given
+        String path = "/sqli/boolean/no-rows-quoted/";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "name");
+                        boolean parses =
+                                "zz".equals(value)
+                                        || (value != null && value.matches("zz' AND .* -- "));
+                        return newFixedLengthResponse(
+                                parses ? "<p>No matching rows</p>" : "<p>Query failed</p>");
+                    }
+                });
+        rule.init(getHttpMessage(path + "?name=zz"), parent);
+
+        // When
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, is(empty()));
+        assertThat(rule.getParameterContext().getLearnedClosing(), is(equalTo("'")));
+    }
 }

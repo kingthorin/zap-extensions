@@ -474,19 +474,14 @@ public final class SqlInjectionScenarioCorpus {
      * text, no gross shape change. The canary stage exists for exactly this shape, so without this
      * row its true-positive side has no corpus coverage.
      *
-     * <p>Labelled {@link SqlInjectionScenario.Outcome#BLIND} for the same budget reason as {@link
-     * #volatilePageOrderByInjection()}: the six appendage probes exhaust the MEDIUM budget before
-     * the canary probe runs, so the MEDIUM corpus runner never reaches it. The HIGH-strength unit
-     * tests in {@code UnionBasedDetectionStrategyUnitTest} prove the wiring instead.
+     * <p>Reached at MEDIUM strength: the UNION stage keeps its last request for the canary rather
+     * than spending the whole budget on error appendages.
      */
     private static SqlInjectionScenario reflectingUnionInterpolation() {
         return new SqlInjectionScenario(
                 "reflecting-union-interpolation",
-                BLIND,
-                "md5-reflection UNION row for the canary middle stage; BLIND, not "
-                        + "INJECTABLE: six appendage probes exhaust the MEDIUM budget before the "
-                        + "canary probe runs — the HIGH-strength unit tests in "
-                        + "UnionBasedDetectionStrategyUnitTest prove the wiring instead",
+                INJECTABLE,
+                "md5-reflection UNION row for the canary stage",
                 "/search?q=test",
                 "",
                 SqlInjectionScenarioCorpus::reflectingUnionPage);

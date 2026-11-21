@@ -23,6 +23,7 @@ import java.io.IOException;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.extension.ascanrules.sqli.DetectionStrategy;
+import org.zaproxy.zap.extension.ascanrules.sqli.ParameterContext;
 import org.zaproxy.zap.extension.ascanrules.sqli.ResponseComparator;
 import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
@@ -117,6 +118,7 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
                 continue;
             }
             context.recordBaselineMatch();
+            learnClosing(context, condition);
 
             // AND_TRUE matches baseline; now test AND_FALSE
             if (used + 1 > budget) {
@@ -190,5 +192,22 @@ public class BooleanBasedDetectionStrategy implements DetectionStrategy {
         }
 
         return false;
+    }
+
+    /**
+     * An AND-true probe that answers like the baseline was parsed as part of the query, so the text
+     * it opened with is what closes the value's SQL context. Recorded even when AND-false then
+     * fails to differ (zero-row and UPDATE pages): the syntax was accepted either way, and that is
+     * what the UNION strategy needs to pick its prefix. LIKE pairs say nothing about syntax.
+     */
+    private static void learnClosing(
+            ScanContext context, BooleanConditionPayloads.Condition condition) {
+        ParameterContext parameterContext = context.getParameterContext();
+        if (parameterContext == null || !BooleanConditionPayloads.CONDITIONS.contains(condition)) {
+            return;
+        }
+        String andTrue = condition.andTrue();
+        parameterContext.learnClosing(
+                andTrue.startsWith("'") ? "'" : andTrue.startsWith("\"") ? "\"" : "");
     }
 }

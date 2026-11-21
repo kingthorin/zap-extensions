@@ -23,6 +23,8 @@ import java.io.IOException;
 import org.parosproxy.paros.core.scanner.Alert;
 import org.parosproxy.paros.network.HttpMessage;
 import org.zaproxy.zap.extension.ascanrules.sqli.DetectionStrategy;
+import org.zaproxy.zap.extension.ascanrules.sqli.ParameterContext;
+import org.zaproxy.zap.extension.ascanrules.sqli.ParameterContext.ValueShape;
 import org.zaproxy.zap.extension.ascanrules.sqli.ResponseComparator;
 import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
 
@@ -34,7 +36,10 @@ import org.zaproxy.zap.extension.ascanrules.sqli.ScanContext;
  * <p>Uses a cheap cascade (ASC, then DESC only if ASC matched): typical cost is 1 or 2 requests.
  * When that oracle is inconclusive and budget allows, a second oracle runs (valid vs out-of-range
  * ORDER BY index, 2 more requests), which is what detects pages whose baseline matches zero rows.
- * Full cost at HIGH strength is therefore 4 requests.
+ * When ASC does not match the baseline, or both oracles are inconclusive, a third one checks
+ * whether a valid sort position is accepted while an out-of-range one gets the control's page (2
+ * requests), which still works when the listed rows change between requests. On a parameter that
+ * looks like a sort parameter that oracle runs first. The budget at HIGH strength is 4 requests.
  *
  * <p>Compares against the baseline the rule fetches once per parameter ({@link
  * ScanContext#getCachedBaseline()}), rather than fetching its own copy of the same request.
@@ -53,6 +58,12 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
      */
     private static final String OUT_OF_RANGE_INDEX_PAYLOAD = "' ORDER BY 99 -- ";
 
+    /** A sort position every result set has. */
+    private static final String VALID_SORT_POSITION = ",1";
+
+    /** A sort position no result set has: rejected while the query is planned. */
+    private static final String OUT_OF_RANGE_SORT_POSITION = ",99";
+
     @Override
     public boolean detect(ScanContext context) throws IOException {
         String originalValue = context.getOriginalValue() == null ? "" : context.getOriginalValue();
@@ -60,6 +71,15 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         if (budget < 1) {
             // Minimum 1 request: ASC (DESC only sent if ASC matches)
             return false;
+        }
+
+        // A sort parameter tries the control-anchored oracle first: it is the one that still works
+        // when the listed rows change between requests, which would otherwise spend the budget on
+        // an ASC/DESC comparison that the change spoils.
+        ParameterContext parameterContext = context.getParameterContext();
+        boolean sortParameter = parameterContext != null && parameterContext.isOrderByHint();
+        if (sortParameter && detectRejectedSortPosition(context, originalValue)) {
+            return true;
         }
 
         // Baseline fetched once for this parameter by the rule
@@ -112,8 +132,9 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
         }
 
         if (!ascMatchesBaseline) {
-            // ASC doesn't match baseline — injection unlikely, bail early
-            return false;
+            // ASC doesn't match the baseline: either ordering is not controlled here, or the rows
+            // themselves move between requests. Only the control-anchored oracle can tell.
+            return !sortParameter && detectRejectedSortPosition(context, originalValue);
         }
         context.recordBaselineMatch();
 
@@ -175,7 +196,85 @@ public class OrderByDetectionStrategy implements DetectionStrategy {
             return true;
         }
 
-        return detectRejectedOrderByIndex(context, baseline, originalValue, fixedTemplate);
+        return detectRejectedOrderByIndex(context, baseline, originalValue, fixedTemplate)
+                || (!sortParameter && detectRejectedSortPosition(context, originalValue));
+    }
+
+    /**
+     * Third oracle, for a value that is itself the ORDER BY expression: appending a valid sort
+     * position ({@code ,1}) keeps the page working, while an out-of-range one ({@code ,99}) gets
+     * exactly the page the benign control gets.
+     *
+     * <p>Both sides are compared with the control rather than the baseline, so rows that change
+     * between requests (another user, or another page of the same application, writing to the
+     * table) do not hide it: the control is an error or "not found" page, which does not move with
+     * the data. It needs a baseline that differs from the control, or every value would look valid.
+     *
+     * <p>Only for values shaped like an ORDER BY expression, a column name or a position. A date
+     * gets the same answer from the database's date parsing whether or not it is injectable ({@code
+     * 2010-02-02,1} reads as a valid date and time, {@code 2010-02-02,99} does not), even behind a
+     * prepared statement.
+     *
+     * @return true if an alert was raised
+     */
+    private boolean detectRejectedSortPosition(ScanContext context, String originalValue)
+            throws IOException {
+        HttpMessage baseline = context.getCachedBaseline();
+        HttpMessage control = context.getCachedControl();
+        String controlValue = originalValue + ScanContext.CONTROL_SUFFIX;
+        ParameterContext parameterContext = context.getParameterContext();
+        if (parameterContext == null
+                || (parameterContext.getValueShape() != ValueShape.NUMERIC
+                        && parameterContext.getValueShape() != ValueShape.IDENTIFIER)
+                || control == null
+                || context.isStopped()
+                || context.getRemainingBudget() < 2
+                || comparator.matchesExactlyAfterStripping(
+                        baseline,
+                        originalValue,
+                        originalValue,
+                        control,
+                        originalValue,
+                        controlValue)) {
+            return false;
+        }
+
+        // The out-of-range position first: on most pages it does not get the control's page, and
+        // the oracle then stops after one request.
+        String invalidValue = originalValue + OUT_OF_RANGE_SORT_POSITION;
+        HttpMessage invalidMsg = context.newMessage();
+        context.setParam(invalidMsg, invalidValue);
+        context.sendAndReceive(invalidMsg);
+        if (!comparator.matchesExactlyAfterStripping(
+                control, originalValue, controlValue, invalidMsg, originalValue, invalidValue)) {
+            return false;
+        }
+
+        String validValue = originalValue + VALID_SORT_POSITION;
+        HttpMessage validMsg = context.newMessage();
+        context.setParam(validMsg, validValue);
+        context.sendAndReceive(validMsg);
+        if (validMsg.getResponseHeader().getStatusCode()
+                        != baseline.getResponseHeader().getStatusCode()
+                || comparator.matchesExactlyAfterStripping(
+                        control,
+                        originalValue,
+                        controlValue,
+                        validMsg,
+                        originalValue,
+                        validValue)) {
+            return false;
+        }
+        context.recordBaselineMatch();
+
+        context.newAlert()
+                .setConfidence(Alert.CONFIDENCE_MEDIUM)
+                .setParam(context.getParamName())
+                .setAttack(invalidValue)
+                .setEvidence("ORDER BY position rejected while a valid position is accepted")
+                .setMessage(invalidMsg)
+                .raise();
+        return true;
     }
 
     /**

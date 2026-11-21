@@ -19,6 +19,7 @@
  */
 package org.zaproxy.zap.extension.ascanrules.sqli;
 
+import static fi.iki.elonen.NanoHTTPD.newFixedLengthResponse;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
@@ -26,12 +27,16 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 
+import fi.iki.elonen.NanoHTTPD.IHTTPSession;
+import fi.iki.elonen.NanoHTTPD.Response;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.parosproxy.paros.core.scanner.Plugin.AttackStrength;
 import org.zaproxy.zap.extension.ascanrules.sqli.SqlInjectionScenario.Outcome;
+import org.zaproxy.zap.testutils.NanoServerHandler;
 
 /**
  * Tests the presence prior: a technique that has found an injection is tried first next time, and
@@ -206,6 +211,49 @@ class SqlInjectionPresencePriorTest extends AbstractSqlInjectionModularScanRuleT
 
         // Then
         assertThat(expected.scenario().id(), alertsRaised, hasSize(2));
+    }
+
+    /**
+     * A technique that worked on another page of the host is only moved up a little, not to the
+     * front: a UNION found on a search page must not run ahead of ORDER BY on a sort parameter.
+     */
+    @Test
+    void hostWidePriorDoesNotOverrideASortParameter() throws Exception {
+        // Given a host where UNION has found an injection
+        rule.setAttackStrength(AttackStrength.HIGH);
+        SqlInjectionScenario unionScenario = scenario("royal-event-date-filter-canary");
+        nano.addHandler(unionScenario.fixture().get());
+        rule.init(scenarioRequest(unionScenario), parent);
+        rule.scan();
+        assertThat(alertsRaised, hasSize(1));
+        assertThat(rule.getTechniqueRequests().containsKey("UNION"), is(true));
+
+        // When a sort parameter on the same host is scanned
+        String path = "/messages";
+        nano.addHandler(
+                new NanoServerHandler(path) {
+                    @Override
+                    protected Response serve(IHTTPSession session) {
+                        String value = getFirstParamValue(session, "sort");
+                        if ("msgid DESC -- ".equals(value)) {
+                            return newFixedLengthResponse(
+                                    "<table><tr><td>2</td></tr><tr><td>1</td></tr></table>");
+                        }
+                        return newFixedLengthResponse(
+                                "msgid".equals(value) || "msgid ASC -- ".equals(value)
+                                        ? "<table><tr><td>1</td></tr><tr><td>2</td></tr></table>"
+                                        : "Information is unavailable");
+                    }
+                });
+        rule.init(getHttpMessage(path + "?sort=msgid"), parent);
+        rule.scan();
+
+        // Then
+        assertThat(alertsRaised, hasSize(2));
+        assertThat(
+                "ORDER BY found it without UNION running first: " + rule.getTechniqueRequests(),
+                rule.getTechniqueRequests().containsKey("UNION"),
+                is(false));
     }
 
     private static SqlInjectionScenario scenario(String id) {

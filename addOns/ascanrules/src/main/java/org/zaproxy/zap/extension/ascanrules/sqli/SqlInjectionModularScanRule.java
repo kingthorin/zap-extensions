@@ -137,6 +137,12 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
                     // Login bypass: gated to HIGH/INSANE, 2 requests (bypass + restrict-verify).
                     Map.entry("LOGINBYPASS", new int[] {0, 0, 2, 2}));
 
+    /** How much a technique's success elsewhere on the host raises its prior for this parameter. */
+    private static final float HOST_PRIOR_BOOST = 0.1f;
+
+    /** Host-wide successes never outrank a record for this very parameter, which is 1.0. */
+    private static final float MAX_HOST_PRIOR = 0.95f;
+
     private String paramName;
     private String originalValue;
     private String currentTechnique = "";
@@ -233,7 +239,7 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
             cachedBaseline = getNewMsg();
             setParameter(cachedBaseline, param, value);
             super.sendAndReceive(cachedBaseline);
-            parameterContext = SqliContextAnalyzer.analyze(value, cachedBaseline);
+            parameterContext = SqliContextAnalyzer.analyze(param, value, cachedBaseline);
             // A replay is only meaningful for this parameter's own baseline; the previous
             // parameter's must not be reused.
             cachedRepeat = null;
@@ -262,13 +268,7 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
         initBudgets();
 
         String[] techniqueNames = {
-            "ERROR",
-            "BOOLEAN",
-            "EXPRESSION",
-            "ORDERBY",
-            "UNION",
-            "QUOTEBALANCE",
-            "LOGINBYPASS"
+            "ERROR", "BOOLEAN", "EXPRESSION", "ORDERBY", "UNION", "QUOTEBALANCE", "LOGINBYPASS"
         };
 
         Integer[] order = techniqueOrder(uri, techniqueNames);
@@ -299,8 +299,9 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
 
     /**
      * Orders the techniques by how likely each is to find this injection: one that has already
-     * found one for this parameter, or anywhere else on this host, goes first, and the rest fall
-     * back to the static priors in {@link ParameterContext#estimateProbabilityFor(String)}.
+     * found one for this parameter goes first, one that found one elsewhere on this host is moved
+     * up a little, and the rest keep the static priors in {@link
+     * ParameterContext#estimateProbabilityFor(String)}.
      *
      * <p>Reorder only, never skip. Every technique still runs, so a record that has gone stale --
      * the injection was fixed, or the page was never injectable in the first place -- costs the
@@ -329,28 +330,22 @@ public class SqlInjectionModularScanRule extends AbstractAppParamPlugin
         return order;
     }
 
-    private float priorFor(URI uri, String technique) throws IOException {
-        if (hasPresenceRecord(uri, technique)) {
-            return 1.0f;
-        }
-        return parameterContext.estimateProbabilityFor(technique);
-    }
-
     /**
-     * Tells whether the technique has already found an injection here, looking at this parameter on
-     * this path first and then at the host as a whole.
-     *
-     * @param uri the request's URI, for the path-scoped records, or {@code null} if it has none
-     * @param technique the technique name
-     * @return {@code true} if a presence record covers the technique
-     * @throws IOException if a presence record could not be read
+     * A technique that already found an injection in this parameter on this path goes first. One
+     * that found an injection elsewhere on the host only gets a nudge: other pages on the host say
+     * little about this parameter's context, and letting them override it would put, say, a UNION
+     * found on a search page ahead of ORDER BY on every sort parameter of the host.
      */
-    private boolean hasPresenceRecord(URI uri, String technique) throws IOException {
+    private float priorFor(URI uri, String technique) throws IOException {
         Kb kb = getKb();
         if (uri != null && kb.getString(uri, presenceKey(technique, paramName)) != null) {
-            return true;
+            return 1.0f;
         }
-        return kb.getString(techniqueKey(technique)) != null;
+        float prior = parameterContext.estimateProbabilityFor(technique);
+        if (kb.getString(techniqueKey(technique)) != null) {
+            return Math.min(prior + HOST_PRIOR_BOOST, MAX_HOST_PRIOR);
+        }
+        return prior;
     }
 
     /**
